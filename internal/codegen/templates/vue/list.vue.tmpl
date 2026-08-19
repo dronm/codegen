@@ -1,0 +1,9 @@
+<script setup lang="ts">
+import { CollectionListPage } from "@katren/vue-collection-lib";
+
+import { {{ .Camel }}Collection } from "@/collections/{{ .FileBase }}.gen";
+</script>
+
+<template>
+	<CollectionListPage :collection="{{ .Camel }}Collection" />
+</template>

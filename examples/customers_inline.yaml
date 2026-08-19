@@ -1,0 +1,110 @@
+name: Customer
+comment: Customer reference entry.
+humanName: customer
+humanNamePlural: customers
+
+table:
+  schema: public
+  name: customers
+
+route: /customers
+permissionPrefix: customer
+serviceName: Customer
+
+keys:
+  - name: id
+    pathName: id
+    type: int
+
+fields:
+  - name: id
+    type: int
+    primaryKey: true
+    autoIncrement: true
+    serverGenerated: true
+
+  - name: inn
+    type: string
+    required: true
+    maxLen: 12
+
+  - name: kpp
+    type: string
+    nullable: true
+    maxLen: 10
+
+  - name: name
+    type: text
+    required: true
+
+  - name: ref_1c
+    type: jsonb
+    nullable: true
+
+  - name: active
+    type: bool
+    required: true
+    default: "false"
+
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+permissions:
+  enabled: true
+  grantRoles:
+    - admin
+
+applicationRoute:
+  enabled: true
+  name: customers
+  path: /customers
+  description: Customers
+  section: References
+  menuAvailable: true
+
+frontend:
+  scaffold: true
+
+  # Inline grids do not need the generated page form.
+  form:
+    enabled: false
+
+  list:
+    editMode: inline
+    pageSize: 30
+    columns:
+      - field: id
+        label: ID
+        width: 8rem
+
+      - field: inn
+        label: INN
+        width: 12rem
+
+      - field: kpp
+        label: KPP
+        width: 10rem
+
+      - field: name
+        label: Name
+        width: 30rem
+
+      # json/jsonb and date fields are not assigned a generated inline editor.
+      # ref_1c is nullable, so inline creation can safely initialize it to null.
+      - field: ref_1c
+        label: 1C reference
+        width: 16rem
+
+      - field: active
+        label: Active
+        width: 8rem
+
+migration:
+  enabled: true
+
+test:
+  enabled: false

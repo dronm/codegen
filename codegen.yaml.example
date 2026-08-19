@@ -1,0 +1,29 @@
+schemaDir: ./schema
+serverRoot: .
+frontendRoot: ../front
+migrationsDir: ./migrations
+
+backend:
+  enabled: true
+
+frontend:
+  enabled: false
+
+apiTest:
+  enabled: true
+
+registries:
+  enabled: true
+
+migrations:
+  enabled: true
+  overwrite: false
+  createMode: internal
+  createBin: migrate
+  createExt: sql
+  createSeq: true
+  sequenceWidth: 6
+
+allowManualCollisions: false
+goJsonTagName: json
+goFilterTagName: f

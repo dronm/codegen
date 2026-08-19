@@ -1,0 +1,89 @@
+<script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
+import {
+	CollectionEditPage,
+	useCollectionEditPage,
+} from "@katren/vue-collection-lib";
+import { {{ .Camel }}Api } from "@/api/{{ .FileBase }}.gen";
+import {{ .Name }}Form from "@/components/{{ .Camel }}/{{ .Name }}Form.vue";
+import { use{{ .Name }}Schemas } from "@/composables/schemas/use{{ .Name }}Schemas.gen";
+import {
+	create{{ .Name }}FormModel,
+	{{ .Camel }}FormMutationFields,
+	type {{ .Name }}FormModel,
+} from "@/forms/{{ .FileBase }}.gen";
+import type {
+	{{ .Name }},
+	{{ .Name }}Key,
+	{{ .Name }}New,
+	{{ .Name }}Upd,
+} from "@/types/{{ .FileBase }}.gen";
+
+const { t } = useI18n();
+const schemas = use{{ .Name }}Schemas();
+const edit = useCollectionEditPage<
+	{{ .Name }}FormModel,
+	{{ .Name }}Key,
+	{{ .Name }}New,
+	{{ .Name }}Upd,
+	{{ .Name }}
+>({
+	api: {{ .Camel }}Api,
+	createRouteName: "{{ .Frontend.Routes.CreateName }}",
+	listRoute: { name: "{{ .Frontend.Routes.ListName }}" },
+	keyFromRoute: (route) => ({
+{{- range .FrontendKeys }}
+		{{ .TSName }}: {{ if .IsNumeric }}Number{{ else }}String{{ end }}(route.params.{{ .PathName }} ?? {{ if .IsNumeric }}0{{ else }}""{{ end }}),
+{{- end }}
+	}),
+	copyKeyFromRoute: (route) => route.query.copy_{{ (index .FrontendKeys 0).PathName }}
+		? ({
+{{- range .FrontendKeys }}
+			{{ .TSName }}: {{ if .IsNumeric }}Number{{ else }}String{{ end }}(route.query.copy_{{ .PathName }} ?? {{ if .IsNumeric }}0{{ else }}""{{ end }}),
+{{- end }}
+		})
+		: null,
+	createModel: create{{ .Name }}FormModel,
+	copyModel: (detail) => ({
+		...detail,
+{{- range .FrontendKeys }}
+{{- if .IsString }}
+		{{ .TSName }}: `${detail.{{ .TSName }}}_COPY`,
+{{- else }}
+		{{ .TSName }}: undefined,
+{{- end }}
+{{- end }}
+{{- range .FrontendFields }}
+{{- if eq .TSName "name" }}
+		name: `${detail.name} - ${t("Grid.copySuffix")}`,
+{{- end }}
+{{- end }}
+	}),
+	fields: {{ .Camel }}FormMutationFields,
+	createSchema: schemas.{{ .Name }}NewSchema,
+	updateSchema: schemas.{{ .Name }}UpdSchema,
+	success: { mode: "back" },
+});
+
+const submit = async (model: {{ .Name }}New): Promise<void> => {
+	await edit.submit(model);
+};
+</script>
+
+<template>
+	<CollectionEditPage
+		:title="t(`{{ .Name }}.form.${edit.mode.value}`)"
+		:loading="edit.loading.value"
+		@back="edit.goBack"
+	>
+		<{{ .Name }}Form
+			:model="edit.model.value"
+			:mode="edit.mode.value"
+			:errors="edit.errors"
+			:submitting="edit.submitting.value"
+			@submit="submit"
+			@cancel="edit.goBack"
+		/>
+	</CollectionEditPage>
+</template>

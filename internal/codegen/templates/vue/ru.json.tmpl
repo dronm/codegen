@@ -1,0 +1,17 @@
+{
+{{- range $objectIndex, $object := .Objects }}{{ if $objectIndex }},{{ end }}
+	{{ goQuote $object.Name }}: {
+		"title": {{ goQuote $object.Frontend.Title }},
+		"fields": {
+{{- range $fieldIndex, $field := $object.Frontend.LocaleFields }}{{ if $fieldIndex }},{{ end }}
+			{{ goQuote $field.Name }}: {{ goQuote $field.Label }}
+{{- end }}
+		},
+		"form": {
+			"create": {{ goQuote $object.Frontend.Form.CreateTitle }},
+			"edit": {{ goQuote $object.Frontend.Form.EditTitle }},
+			"copy": {{ goQuote $object.Frontend.Form.CopyTitle }}
+		}
+	}
+{{- end }}
+}

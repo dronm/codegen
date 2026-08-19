@@ -1,0 +1,138 @@
+<script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
+{{- range .Frontend.Form.Imports }}
+import {{ .Name }} from "{{ .From }}";
+{{- end }}
+
+import {
+	CollectionForm,
+	FormField,
+	useCollectionFormModel,
+	type FormErrorsView,
+} from "@katren/vue-collection-lib";
+import {
+	create{{ .Name }}FormModel,
+	type {{ .Name }}FormModel,
+} from "@/forms/{{ .FileBase }}.gen";
+import type { {{ .Name }}New } from "@/types/{{ .FileBase }}.gen";
+
+type FormMode = "create" | "edit" | "copy";
+
+const props = withDefaults(defineProps<{
+	model?: Partial<{{ .Name }}FormModel>;
+	mode?: FormMode;
+	errors?: FormErrorsView;
+	submitting?: boolean;
+}>(), {
+	model: () => ({}),
+	mode: "create",
+	errors: undefined,
+	submitting: false,
+});
+
+const emit = defineEmits<{
+	submit: [model: {{ .Name }}New];
+	cancel: [];
+}>();
+
+const { t } = useI18n();
+const { form } = useCollectionFormModel<{{ .Name }}FormModel>({
+	model: () => props.model,
+	defaults: create{{ .Name }}FormModel,
+});
+{{- if .Frontend.Form.NeedsFormatDate }}
+const formatDate = (value: unknown): string => value instanceof Date
+	? value.toLocaleString("ru-RU")
+	: "";
+{{- end }}
+{{- if .Frontend.Form.NeedsNullableText }}
+const nullableText = (value: string | null | undefined): string | null => {
+	const normalized = value?.trim() ?? "";
+
+	return normalized || null;
+};
+{{- end }}
+
+const submit = (): void => {
+	const model: {{ .Name }}New = {
+{{- range .FrontendCreateFields }}
+		{{ .TSName }}: {{ frontendSubmitExpression . }},
+{{- end }}
+	};
+	emit("submit", model);
+};
+</script>
+
+<template>
+	<CollectionForm
+		:errors="props.errors"
+		:submitting="props.submitting"
+		@submit="submit"
+		@cancel="emit('cancel')"
+	>
+		<div class="{{ frontendGridColumnsClass .Frontend.Form.Columns }}">
+{{- range .Frontend.Form.Fields }}
+{{- if not .Hidden }}
+			<FormField
+				field="{{ .Field.TSName }}"
+				forId="{{ .ID }}"
+{{- if not .CustomComponent }}
+				:label="t('{{ $.Name }}.fields.{{ .Field.TSName }}')"
+{{- end }}
+				:errors="props.errors"
+				containerClass="{{ frontendColumnSpanClass .ColumnSpan }}{{ if eq .Component "Checkbox" }} pt-7{{ end }}"
+				v-slot="{ invalid, error }"
+			>
+{{- if eq .Component "Checkbox" }}
+				<div class="flex items-center gap-2">
+					<Checkbox
+						v-model="form.{{ .Field.TSName }}"
+						inputId="{{ .ID }}"
+						:invalid="invalid"
+						:disabled="{{ .DisableExpression }}"
+						binary
+					/>
+					<label for="{{ .ID }}">{{ "{{" }} t("{{ $.Name }}.fields.{{ .Field.TSName }}") {{ "}}" }}</label>
+				</div>
+{{- else if and (eq .Component "InputText") (or (eq .Field.Type "date") (eq .Field.Type "datetime") (eq .Field.Type "timestamptz")) }}
+				<InputText
+					id="{{ .ID }}"
+					:modelValue="formatDate(form.{{ .Field.TSName }})"
+					disabled
+				/>
+{{- else if or (eq .Component "InputText") (eq .Component "InputNumber") (eq .Component "Textarea") }}
+				<{{ .Component }}
+					id="{{ .ID }}"
+					v-model="form.{{ .Field.TSName }}"
+					:invalid="invalid"
+					:disabled="{{ .DisableExpression }}"
+{{- if eq .Component "InputNumber" }}
+					:useGrouping="false"
+{{- end }}
+{{- if eq .Component "Textarea" }}
+					rows="4"
+{{- end }}
+{{- if .Autofocus }}
+					autofocus
+{{- end }}
+{{- if and .Field.Required (not .ReadOnly) }}
+					required
+{{- end }}
+				/>
+{{- else }}
+				<{{ .Component }}
+					id="{{ .ID }}"
+					v-model="form.{{ .Field.TSName }}"
+					:label="t('{{ $.Name }}.fields.{{ .Field.TSName }}')"
+					:invalid="invalid"
+					:error="error"
+					:disabled="{{ .DisableExpression }}"
+				/>
+{{- end }}
+			</FormField>
+{{- end }}
+{{- end }}
+		</div>
+	</CollectionForm>
+</template>

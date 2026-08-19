@@ -1,0 +1,169 @@
+name: VehicleBrand
+comment: VehicleBrand describes an editable vehicle manufacturer reference entry.
+humanName: vehicle brand
+humanNamePlural: vehicle brands
+
+table:
+  schema: public
+  name: vehicle_brands
+  comment: Vehicle manufacturer reference data.
+  checks:
+    - btrim(name) <> ''
+
+route: /vehicle-brands
+permissionPrefix: vehicleBrand
+serviceName: VehicleBrand
+sessionRequired: true
+crudNotifications: true
+
+keys:
+  - name: id
+    pathName: id
+    type: int
+
+fields:
+  - name: id
+    type: int
+    primaryKey: true
+    autoIncrement: true
+    serverGenerated: true
+
+  - name: name
+    type: string
+    required: true
+    maxLen: 250
+    comment: Display name of the vehicle manufacturer.
+
+  - name: name_variants
+    type: text
+    nullable: true
+    jsonOmitEmpty: true
+
+  - name: popularity_type_id
+    type: int
+    nullable: true
+    references:
+      table: popularity_types
+      column: id
+      onDelete: SET NULL
+
+  - name: is_active
+    type: bool
+    required: true
+    dbRequired: true
+    default: "true"
+
+  - name: created_at
+    type: timestamptz
+    dbRequired: true
+    serverGenerated: true
+    default: now()
+
+  - name: updated_at
+    type: timestamptz
+    dbRequired: true
+    serverGenerated: true
+    default: now()
+
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+permissions:
+  enabled: true
+  grantRoles:
+    - admin
+  descriptions:
+    create: Создание марки автомобиля
+    list: Просмотр списка марок автомобилей
+    detail: Просмотр марки автомобиля
+    update: Изменение марки автомобиля
+    delete: Удаление марки автомобиля
+
+applicationRoute:
+  enabled: true
+  name: vehicleBrands
+  path: /vehicle-brands
+  description: Марки автомобилей
+  section: Справочники
+  icon: pi pi-car
+  menuAvailable: true
+
+menu:
+  enabled: true
+  role: admin
+  caption: Марки автомобилей
+  sortOrder: 10
+  parent:
+    caption: Автомобили
+    sortOrder: 40
+    create: true
+
+frontend:
+  scaffold: true
+  title: Марки автомобилей
+  form:
+    columns: 2
+    createTitle: Новая марка автомобиля
+    editTitle: Марка автомобиля
+    copyTitle: Копия марки автомобиля
+    fields:
+      - field: name
+        label: Наименование
+        component: text
+        autofocus: true
+
+      - field: name_variants
+        label: Варианты наименования
+        component: textarea
+        columnSpan: 2
+
+      - field: popularity_type_id
+        label: Популярность
+        component: PopularityTypeReferenceInput
+        componentImport: "@/components/references/PopularityTypeReferenceInput.vue"
+
+      - field: is_active
+        label: Активна
+        component: checkbox
+        default: true
+
+  list:
+    pageSize: 30
+    columns:
+      - field: id
+        label: ID
+        width: 8rem
+
+      - field: name
+        label: Наименование
+        width: 32rem
+
+      - field: popularity_type_id
+        label: Популярность
+        width: 12rem
+
+      - field: is_active
+        label: Активна
+        width: 8rem
+
+  routes:
+    listName: vehicleBrands
+    createName: vehicleBrandCreate
+    editName: vehicleBrandEdit
+
+migration:
+  enabled: true
+  updatedAtTrigger: updated_at
+  indexes:
+    - name: vehicle_brands_name_idx
+      columns:
+        - lower(name)
+
+# Generated integration tests require full CRUD and concrete values that satisfy
+# all foreign keys in the target database. Enable only after supplying them.
+test:
+  enabled: false
