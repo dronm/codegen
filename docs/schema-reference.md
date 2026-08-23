@@ -87,6 +87,26 @@ internal/httpapi/vehicleBrand_actions.go
 internal/models/vehicleBrand_extra.go
 ```
 
+To replace selected generated CRUD method bodies without taking ownership of the complete service, keep the operations enabled and list their lower-case action names under `service.manualMethods`:
+
+```yaml
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+service:
+  manualMethods:
+    - create
+    - update
+```
+
+This setting changes only service-method ownership. The service type, constructor, registration, HTTP routes and binders, permission rows, API types, and frontend contracts remain generated from `crud`. Codegen omits `Create` and `Update` from `internal/services/<object>.gen.go`; implement both methods on the generated service type in `internal/services/<object>_custom.go` using the signatures expected by the generated routes.
+
+Supported manual method names are `create`, `list`, `detail`, `update`, and `delete`. Each selected method must also be enabled under `crud`. Before generation, Codegen scans hand-written service files, requires each manually owned receiver method to exist, and rejects receiver methods that collide with methods which are still generator-owned. Generated `.gen.go`, `_gen.go`, and test files do not satisfy manual ownership.
+
 By default, generation refuses to run when any of these manual files already exists:
 
 ```text
@@ -302,6 +322,7 @@ crud:
 | `route` | API collection route. |
 | `permissionPrefix` | Permission and route-name prefix; defaults to lower camel model name. |
 | `serviceName` | Registered webapp service name; defaults to model name. |
+| `service.manualMethods` | Enabled CRUD service methods whose Go implementations are hand-written. |
 | `sessionRequired` | Require an authenticated session; defaults to true. |
 | `crudNotifications` | Enable webapp CRUD notifications; defaults to true. |
 | `keys` | Ordered API/database key fields. |

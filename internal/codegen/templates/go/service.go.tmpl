@@ -3,7 +3,9 @@
 package services
 
 import (
+{{- if .ServiceImports.Context }}
 	"context"
+{{- end }}
 {{- if .ServiceImports.Errors }}
 	"errors"
 {{- end }}
@@ -22,7 +24,9 @@ import (
 {{- if .SessionRequired }}
 	{{ goQuote (printf "%s/internal/apperrors" .GoModule) }}
 {{- end }}
+{{- if .ServiceImports.Models }}
 	{{ goQuote (printf "%s/internal/models" .GoModule) }}
+{{- end }}
 	"github.com/dronm/webapp"
 {{- if .ServiceImports.WebModels }}
 	wmodels "github.com/dronm/webapp/models"
@@ -53,7 +57,7 @@ func Register{{ .Name }}Service() {
 {{- end }}
 	)
 }
-{{- if .CRUD.Create }}
+{{- if .GeneratedServiceCRUD.Create }}
 
 func (s *{{ .Name }}Service) Create(
 	ctx context.Context,
@@ -76,7 +80,7 @@ func (s *{{ .Name }}Service) Create(
 	return result, nil
 }
 {{- end }}
-{{- if .CRUD.Update }}
+{{- if .GeneratedServiceCRUD.Update }}
 
 func (s *{{ .Name }}Service) Update(
 	ctx context.Context,
@@ -121,7 +125,7 @@ func (s *{{ .Name }}Service) Update(
 	return wmodels.RowsAffectedResponse{RowsAffected: rowsAffected}, nil
 }
 {{- end }}
-{{- if .CRUD.Delete }}
+{{- if .GeneratedServiceCRUD.Delete }}
 
 func (s *{{ .Name }}Service) Delete(
 	ctx context.Context,
@@ -200,7 +204,7 @@ func (s *{{ .Name }}Service) Delete(
 	return wmodels.RowsAffectedResponse{RowsAffected: rowsAffected}, nil
 }
 {{- end }}
-{{- if .CRUD.Detail }}
+{{- if .GeneratedServiceCRUD.Detail }}
 
 func (s *{{ .Name }}Service) Detail(
 	ctx context.Context,
@@ -277,7 +281,7 @@ func (s *{{ .Name }}Service) Detail(
 	return result, nil
 }
 {{- end }}
-{{- if .CRUD.List }}
+{{- if .GeneratedServiceCRUD.List }}
 
 func (s *{{ .Name }}Service) List(
 	ctx context.Context,

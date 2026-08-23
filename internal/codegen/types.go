@@ -53,6 +53,8 @@ type ObjectView struct {
 	CommonSchemas        []string
 	ListCommonSchemas    []string
 	CRUD                 CRUDSpec
+	GeneratedServiceCRUD CRUDSpec
+	ManualServiceCRUD    CRUDSpec
 	PermissionRows       []PermissionView
 	GrantRoles           []string
 	ApplicationRoute     ApplicationRouteView
@@ -261,9 +263,11 @@ type MigrationView struct {
 }
 
 type ServiceImportView struct {
+	Context   bool
 	Errors    bool
 	Fmt       bool
 	Modelbind bool
+	Models    bool
 	Types     bool
 	Session   bool
 	AppErrors bool
@@ -348,9 +352,11 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 		CRUDNotifications:  boolOrDefault(spec.CRUDNotifications, true),
 		PermissionsEnabled: boolOrDefault(spec.Permissions.Enabled, true),
 		CRUD:               spec.CRUD,
+		ManualServiceCRUD:  manualServiceCRUD(spec.Service.ManualMethods),
 		GoModule:           cfg.GoModule,
 		CompositeKey:       len(spec.Keys) > 1,
 	}
+	view.GeneratedServiceCRUD = generatedServiceCRUD(view.CRUD, view.ManualServiceCRUD)
 
 	fieldSpecs := make(map[string]FieldSpec, len(spec.Fields))
 	primaryKeyCount := 0
@@ -1135,16 +1141,29 @@ func buildMigrationView(view ObjectView, spec ObjectSpec) MigrationView {
 }
 
 func buildServiceImports(view ObjectView) ServiceImportView {
-	anyCRUD := view.CRUD.Create || view.CRUD.List || view.CRUD.Detail || view.CRUD.Update || view.CRUD.Delete
+	crud := view.GeneratedServiceCRUD
+	anyCRUD := crud.Create || crud.List || crud.Detail || crud.Update || crud.Delete
 	return ServiceImportView{
-		Errors:    view.CRUD.Detail,
+		Context:   anyCRUD,
+		Errors:    crud.Detail,
 		Fmt:       anyCRUD,
-		Modelbind: view.CRUD.Create || view.CRUD.List,
-		Types:     view.CRUD.Delete,
+		Modelbind: crud.Create || crud.List,
+		Models:    anyCRUD,
+		Types:     crud.Delete,
 		Session:   true,
 		AppErrors: view.SessionRequired,
 		Webapp:    true,
-		WebModels: view.CRUD.List || view.CRUD.Update || view.CRUD.Delete,
+		WebModels: crud.List || crud.Update || crud.Delete,
+	}
+}
+
+func generatedServiceCRUD(crud CRUDSpec, manual CRUDSpec) CRUDSpec {
+	return CRUDSpec{
+		Create: crud.Create && !manual.Create,
+		List:   crud.List && !manual.List,
+		Detail: crud.Detail && !manual.Detail,
+		Update: crud.Update && !manual.Update,
+		Delete: crud.Delete && !manual.Delete,
 	}
 }
 

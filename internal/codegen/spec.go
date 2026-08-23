@@ -19,6 +19,7 @@ type ObjectSpec struct {
 	Route             string               `yaml:"route"`
 	PermissionPrefix  string               `yaml:"permissionPrefix"`
 	ServiceName       string               `yaml:"serviceName"`
+	Service           ServiceSpec          `yaml:"service"`
 	SessionRequired   *bool                `yaml:"sessionRequired"`
 	CRUDNotifications *bool                `yaml:"crudNotifications"`
 	Keys              []KeySpec            `yaml:"keys"`
@@ -256,6 +257,10 @@ type CRUDSpec struct {
 	Delete bool `yaml:"delete"`
 }
 
+type ServiceSpec struct {
+	ManualMethods []string `yaml:"manualMethods"`
+}
+
 type TestSpec struct {
 	Enabled           bool           `yaml:"enabled"`
 	CreateBody        map[string]any `yaml:"createBody"`
@@ -297,6 +302,9 @@ func (s ObjectSpec) Validate() error {
 	}
 	if !(s.CRUD.Create || s.CRUD.List || s.CRUD.Detail || s.CRUD.Update || s.CRUD.Delete) {
 		return fmt.Errorf("at least one CRUD operation is required")
+	}
+	if err := validateManualServiceMethods(s.Service.ManualMethods, s.CRUD); err != nil {
+		return err
 	}
 
 	fieldNames := make(map[string]FieldSpec, len(s.Fields))
@@ -507,6 +515,52 @@ func (s ObjectSpec) Validate() error {
 	}
 
 	return nil
+}
+
+func validateManualServiceMethods(methods []string, crud CRUDSpec) error {
+	enabled := map[string]bool{
+		"create": crud.Create,
+		"list":   crud.List,
+		"detail": crud.Detail,
+		"update": crud.Update,
+		"delete": crud.Delete,
+	}
+	seen := make(map[string]struct{}, len(methods))
+	for _, rawMethod := range methods {
+		method := strings.ToLower(strings.TrimSpace(rawMethod))
+		if _, supported := enabled[method]; !supported {
+			return fmt.Errorf("service.manualMethods contains unsupported method %q", rawMethod)
+		}
+		if _, duplicate := seen[method]; duplicate {
+			return fmt.Errorf("service.manualMethods contains duplicate method %q", method)
+		}
+		if !enabled[method] {
+			return fmt.Errorf("service.manualMethods method %q requires crud.%s: true", method, method)
+		}
+		seen[method] = struct{}{}
+	}
+
+	return nil
+}
+
+func manualServiceCRUD(methods []string) CRUDSpec {
+	result := CRUDSpec{}
+	for _, rawMethod := range methods {
+		switch strings.ToLower(strings.TrimSpace(rawMethod)) {
+		case "create":
+			result.Create = true
+		case "list":
+			result.List = true
+		case "detail":
+			result.Detail = true
+		case "update":
+			result.Update = true
+		case "delete":
+			result.Delete = true
+		}
+	}
+
+	return result
 }
 
 func validateFrontendSpec(spec ObjectSpec, fields map[string]FieldSpec) error {

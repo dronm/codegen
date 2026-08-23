@@ -118,6 +118,7 @@ func validateManualFrontendCollisions(frontendRoot string, objects []ObjectView)
 type manualBackendSymbols struct {
 	ModelTypes      map[string]string
 	ServiceSymbols  map[string]string
+	ServiceMethods  map[string]string
 	ServiceNames    map[string]string
 	HTTPSymbols     map[string]string
 	HTTPRoutes      map[string]string
@@ -166,6 +167,36 @@ func validateManualBackendCollisions(serverRoot string, objects []ObjectView) er
 		}
 		addConflict("registered service name", object.ServiceName, symbols.ServiceNames[object.ServiceName], object)
 
+		serviceMethods := []struct {
+			Name      string
+			Enabled   bool
+			Manual    bool
+		}{
+			{Name: "Create", Enabled: object.CRUD.Create, Manual: object.ManualServiceCRUD.Create},
+			{Name: "List", Enabled: object.CRUD.List, Manual: object.ManualServiceCRUD.List},
+			{Name: "Detail", Enabled: object.CRUD.Detail, Manual: object.ManualServiceCRUD.Detail},
+			{Name: "Update", Enabled: object.CRUD.Update, Manual: object.ManualServiceCRUD.Update},
+			{Name: "Delete", Enabled: object.CRUD.Delete, Manual: object.ManualServiceCRUD.Delete},
+		}
+		for _, method := range serviceMethods {
+			if !method.Enabled {
+				continue
+			}
+			methodName := object.Name + "Service." + method.Name
+			source := symbols.ServiceMethods[methodName]
+			if method.Manual {
+				if source == "" {
+					conflicts = append(conflicts, fmt.Sprintf(
+						"manual service method %q for %s was not found in hand-written Go files",
+						methodName,
+						object.Name,
+					))
+				}
+				continue
+			}
+			addConflict("service method", methodName, source, object)
+		}
+
 		httpSymbols := []string{object.Camel + "Routes"}
 		if object.CompositeKey && (object.CRUD.Detail || object.CRUD.Update || object.CRUD.Delete) {
 			httpSymbols = append(httpSymbols, object.Camel+"KeyBinder", object.Camel+"KeyFromRequest")
@@ -193,7 +224,7 @@ func validateManualBackendCollisions(serverRoot string, objects []ObjectView) er
 	}
 	sort.Strings(conflicts)
 	return fmt.Errorf(
-		"generated backend conflicts with hand-written registrations or declarations:\n- %s; remove the conflicting schema/manual declaration or set CODEGEN_ALLOW_MANUAL_COLLISIONS=true only during a deliberate ownership migration",
+		"generated backend conflicts with hand-written registrations or declarations, or has missing manually owned service methods:\n- %s; correct the manual service extension, remove the conflicting declaration, or set CODEGEN_ALLOW_MANUAL_COLLISIONS=true only during a deliberate ownership migration",
 		strings.Join(conflicts, "\n- "),
 	)
 }
@@ -247,6 +278,7 @@ func scanManualBackendSymbols(serverRoot string) (manualBackendSymbols, error) {
 	result := manualBackendSymbols{
 		ModelTypes:      make(map[string]string),
 		ServiceSymbols:  make(map[string]string),
+		ServiceMethods:  make(map[string]string),
 		ServiceNames:    make(map[string]string),
 		HTTPSymbols:     make(map[string]string),
 		HTTPRoutes:      make(map[string]string),
@@ -278,6 +310,16 @@ func scanManualBackendSymbols(serverRoot string) (manualBackendSymbols, error) {
 		filepath.Join(serverRoot, "internal", "services"),
 		func(path string, file *ast.File) {
 			collectTopLevelSymbols(file, path, result.ServiceSymbols)
+			for _, declaration := range file.Decls {
+				function, ok := declaration.(*ast.FuncDecl)
+				if !ok || function.Recv == nil || len(function.Recv.List) == 0 {
+					continue
+				}
+				receiver := receiverTypeName(function.Recv.List[0].Type)
+				if receiver != "" {
+					result.ServiceMethods[receiver+"."+function.Name.Name] = path
+				}
+			}
 			ast.Inspect(file, func(node ast.Node) bool {
 				call, ok := node.(*ast.CallExpr)
 				if !ok || selectorName(call.Fun) != "MustRegisterService" || len(call.Args) == 0 {
@@ -361,7 +403,9 @@ func collectTopLevelSymbols(file *ast.File, path string, destination map[string]
 	for _, declaration := range file.Decls {
 		switch item := declaration.(type) {
 		case *ast.FuncDecl:
-			destination[item.Name.Name] = path
+			if item.Recv == nil {
+				destination[item.Name.Name] = path
+			}
 		case *ast.GenDecl:
 			if item.Tok != token.TYPE {
 				continue
@@ -372,6 +416,19 @@ func collectTopLevelSymbols(file *ast.File, path string, destination map[string]
 				}
 			}
 		}
+	}
+}
+
+func receiverTypeName(expression ast.Expr) string {
+	switch item := expression.(type) {
+	case *ast.Ident:
+		return item.Name
+	case *ast.StarExpr:
+		return receiverTypeName(item.X)
+	case *ast.ParenExpr:
+		return receiverTypeName(item.X)
+	default:
+		return ""
 	}
 }
 

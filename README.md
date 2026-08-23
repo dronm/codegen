@@ -151,6 +151,24 @@ go test ./...
 
 The generator deliberately refuses to overwrite conflicting hand-written model/service/API/frontend artifacts unless `allowManualCollisions` (or the corresponding environment override) is explicitly enabled.
 
+For an enabled CRUD operation whose Go implementation must be application-specific, transfer only the service method body to manual ownership:
+
+```yaml
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+service:
+  manualMethods:
+    - create
+    - update
+```
+
+Codegen continues to generate the service type, constructor, registration, HTTP routes and binders, permissions, models, and frontend contract. It omits only the selected Go methods. Implement them on the generated service type in an explicitly named extension such as `internal/services/materialReceipt_custom.go`. Generation validates that every configured manual method exists in a hand-written Go file, and rejects a hand-written CRUD method that still has generated ownership.
+
 When upgrading from the older `.gen.vue` ownership model, `generate` migrates a legacy `*Form.gen.vue`, `*List.gen.vue`, or `*EditPage.gen.vue` to the corresponding name without `.gen` when the manual target does not already exist, preserving any customizations. If both legacy and manual files exist, generation stops instead of deleting either file; keep the manual file and remove or archive the legacy one explicitly.
 
 ## Template overrides

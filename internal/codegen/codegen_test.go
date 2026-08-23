@@ -56,6 +56,35 @@ func TestLoadObjectsRejectsUnknownSchemaFields(t *testing.T) {
 	}
 }
 
+func TestLoadObjectsSupportsManualServiceMethods(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	content := `{
+		"name":"Example",
+		"table":{"name":"examples"},
+		"route":"/examples",
+		"keys":[{"name":"id","type":"int"}],
+		"fields":[
+			{"name":"id","type":"int","primaryKey":true},
+			{"name":"name","type":"string"}
+		],
+		"crud":{"create":true,"update":true},
+		"service":{"manualMethods":["create","update"]}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "example.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	objects, err := LoadObjects(dir)
+	if err != nil {
+		t.Fatalf("LoadObjects(): %v", err)
+	}
+	if len(objects) != 1 || len(objects[0].Service.ManualMethods) != 2 {
+		t.Fatalf("manual service methods were not loaded: %+v", objects)
+	}
+}
+
 func TestModulePathFromGoMod(t *testing.T) {
 	t.Parallel()
 
@@ -78,6 +107,73 @@ func TestCompositeSpecValidation(t *testing.T) {
 
 	if err := compositeObjectSpec().Validate(); err != nil {
 		t.Fatalf("Validate(): %v", err)
+	}
+}
+
+func TestSpecValidationSupportsManualServiceMethods(t *testing.T) {
+	t.Parallel()
+
+	spec := compositeObjectSpec()
+	spec.Service.ManualMethods = []string{"Create", " update "}
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("Validate(): %v", err)
+	}
+
+	view, err := BuildObjectView(testConfig(t), spec)
+	if err != nil {
+		t.Fatalf("BuildObjectView(): %v", err)
+	}
+	if !view.ManualServiceCRUD.Create || !view.ManualServiceCRUD.Update {
+		t.Fatalf("manual service methods were not preserved: %+v", view.ManualServiceCRUD)
+	}
+	if view.GeneratedServiceCRUD.Create || view.GeneratedServiceCRUD.Update {
+		t.Fatalf("manual service methods must not be generated: %+v", view.GeneratedServiceCRUD)
+	}
+	if !view.GeneratedServiceCRUD.List || !view.GeneratedServiceCRUD.Detail || !view.GeneratedServiceCRUD.Delete {
+		t.Fatalf("unowned service methods must remain generated: %+v", view.GeneratedServiceCRUD)
+	}
+}
+
+func TestSpecValidationRejectsInvalidManualServiceMethods(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		methods []string
+		crud    CRUDSpec
+		want    string
+	}{
+		{
+			name:    "unsupported",
+			methods: []string{"archive"},
+			crud:    CRUDSpec{Create: true},
+			want:    `unsupported method "archive"`,
+		},
+		{
+			name:    "disabled",
+			methods: []string{"update"},
+			crud:    CRUDSpec{Create: true},
+			want:    `method "update" requires crud.update: true`,
+		},
+		{
+			name:    "duplicate",
+			methods: []string{"create", "Create"},
+			crud:    CRUDSpec{Create: true},
+			want:    `duplicate method "create"`,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			spec := compositeObjectSpec()
+			spec.CRUD = test.crud
+			spec.Service.ManualMethods = test.methods
+			err := spec.Validate()
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected error containing %q, got %v", test.want, err)
+			}
+		})
 	}
 }
 
@@ -190,6 +286,7 @@ func TestValidateManualBackendCollisionsFindsRegistrations(t *testing.T) {
 	if err := os.WriteFile(servicePath, []byte(`package services
 import "github.com/dronm/webapp"
 func registerLegacy() { webapp.MustRegisterService("CatalogueItem", nil, nil) }
+func (s *CatalogueItemService) Create() {}
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile(service): %v", err)
 	}
@@ -217,6 +314,7 @@ func legacyRoutes(api *webapp.Group) {
 	for _, expected := range []string{
 		"model type \"CatalogueItemKey\"",
 		"registered service name \"CatalogueItem\"",
+		"service method \"CatalogueItemService.Create\"",
 		"HTTP route \"GET /catalogue-items\"",
 		"route name \"catalogueItem.list\"",
 		"permission name \"catalogueItem.list\"",
@@ -224,6 +322,40 @@ func legacyRoutes(api *webapp.Group) {
 		if !strings.Contains(err.Error(), expected) {
 			t.Fatalf("collision error missing %q: %v", expected, err)
 		}
+	}
+}
+
+func TestValidateManualBackendCollisionsRequiresOwnedServiceMethods(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := testConfig(t)
+	spec := compositeObjectSpec()
+	spec.Service.ManualMethods = []string{"create", "update"}
+	view, err := BuildObjectView(cfg, spec)
+	if err != nil {
+		t.Fatalf("BuildObjectView(): %v", err)
+	}
+
+	err = validateManualBackendCollisions(root, []ObjectView{view})
+	if err == nil || !strings.Contains(err.Error(), `manual service method "CatalogueItemService.Create"`) ||
+		!strings.Contains(err.Error(), `manual service method "CatalogueItemService.Update"`) {
+		t.Fatalf("expected missing manual-method error, got %v", err)
+	}
+
+	path := filepath.Join(root, "internal", "services", "catalogueItem_custom.go")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	content := `package services
+func (s *CatalogueItemService) Create() {}
+func (s *CatalogueItemService) Update() {}
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	if err := validateManualBackendCollisions(root, []ObjectView{view}); err != nil {
+		t.Fatalf("manual service methods must satisfy ownership: %v", err)
 	}
 }
 
@@ -1177,6 +1309,104 @@ func TestRenderCompositeBackend(t *testing.T) {
 	model := readTestFile(t, filepath.Join(cfg.ServerRoot, "internal/models/catalogueItem.gen.go"))
 	if !strings.Contains(model, "type CatalogueItemList struct") || !strings.Contains(model, `const catalogueItemListRelation = "public.catalogue_items_list"`) {
 		t.Fatalf("custom list model was not generated\n%s", model)
+	}
+}
+
+func TestRenderManualServiceMethodsKeepsCRUDContract(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig(t)
+	cfg.ServerRoot = t.TempDir()
+	cfg.MigrationsEnabled = false
+	cfg.APITestEnabled = false
+	cfg.FrontendEnabled = false
+
+	spec := compositeObjectSpec()
+	spec.Service.ManualMethods = []string{"create", "update"}
+	view, err := BuildObjectView(cfg, spec)
+	if err != nil {
+		t.Fatalf("BuildObjectView(): %v", err)
+	}
+	if err := NewRenderer(cfg).RenderObject(view); err != nil {
+		t.Fatalf("RenderObject(): %v", err)
+	}
+
+	service := readTestFile(t, filepath.Join(cfg.ServerRoot, "internal/services/catalogueItem.gen.go"))
+	for _, unexpected := range []string{
+		"func (s *CatalogueItemService) Create(",
+		"func (s *CatalogueItemService) Update(",
+	} {
+		if strings.Contains(service, unexpected) {
+			t.Fatalf("manual service method was generated: %q\n%s", unexpected, service)
+		}
+	}
+	for _, expected := range []string{
+		"func (s *CatalogueItemService) List(",
+		"func (s *CatalogueItemService) Detail(",
+		"func (s *CatalogueItemService) Delete(",
+	} {
+		if !strings.Contains(service, expected) {
+			t.Fatalf("generated service method missing %q\n%s", expected, service)
+		}
+	}
+
+	httpAPI := readTestFile(t, filepath.Join(cfg.ServerRoot, "internal/httpapi/catalogueItem.gen.go"))
+	for _, expected := range []string{
+		"api.POST(",
+		"api.PATCH(",
+		`webapp.WithService("CatalogueItem", "Create")`,
+		`webapp.WithService("CatalogueItem", "Update")`,
+	} {
+		if !strings.Contains(httpAPI, expected) {
+			t.Fatalf("manual service ownership changed the HTTP contract; missing %q\n%s", expected, httpAPI)
+		}
+	}
+
+	actions := make(map[string]bool, len(view.PermissionRows))
+	for _, permission := range view.PermissionRows {
+		actions[permission.Action] = true
+	}
+	if !actions["create"] || !actions["update"] {
+		t.Fatalf("manual service ownership removed CRUD permissions: %+v", view.PermissionRows)
+	}
+}
+
+func TestRenderFullyManualServiceOmitsGeneratedMethodImports(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig(t)
+	cfg.ServerRoot = t.TempDir()
+	cfg.MigrationsEnabled = false
+	cfg.APITestEnabled = false
+	cfg.FrontendEnabled = false
+
+	spec := compositeObjectSpec()
+	spec.Service.ManualMethods = []string{"create", "list", "detail", "update", "delete"}
+	view, err := BuildObjectView(cfg, spec)
+	if err != nil {
+		t.Fatalf("BuildObjectView(): %v", err)
+	}
+	if err := NewRenderer(cfg).RenderObject(view); err != nil {
+		t.Fatalf("RenderObject(): %v", err)
+	}
+
+	service := readTestFile(t, filepath.Join(cfg.ServerRoot, "internal/services/catalogueItem.gen.go"))
+	for _, unexpected := range []string{
+		`"context"`,
+		`"errors"`,
+		`"fmt"`,
+		`"github.com/dronm/modelbind"`,
+		`"github.com/dronm/modelbind/types"`,
+		`"example.com/project/internal/models"`,
+		`wmodels "github.com/dronm/webapp/models"`,
+	} {
+		if strings.Contains(service, unexpected) {
+			t.Fatalf("fully manual service retained unused generated-method import %q\n%s", unexpected, service)
+		}
+	}
+	if !strings.Contains(service, "func RegisterCatalogueItemService()") ||
+		!strings.Contains(service, "func (s *CatalogueItemService) requireDB() error") {
+		t.Fatalf("fully manual service lost generated infrastructure\n%s", service)
 	}
 }
 

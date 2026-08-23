@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- added `service.manualMethods` for per-operation hand-written Go service implementations while retaining generated routes, permissions, models, and frontend contracts;
+- added validation for missing manually owned service methods and generated/manual receiver-method collisions;
 - added `frontend.list.editMode: inline` for generated Vue collection pages;
 - added `frontend.list.columns[].editable` overrides;
 - generated native inline create drafts and typed create-model mapping;
