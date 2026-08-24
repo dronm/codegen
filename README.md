@@ -1,6 +1,6 @@
 # Codegen
 
-`github.com/dronm/codegen` is a schema-driven CRUD code generator for Go/PostgreSQL backends and Vue 3 frontends.
+`github.com/dronm/codegen` is a schema-driven CRUD and accumulation-register code generator for Go/PostgreSQL backends and Vue 3 frontends.
 
 It is intentionally opinionated. The built-in templates target the supported application stack and generate:
 
@@ -24,6 +24,8 @@ optional Vue 3 / TypeScript / Valibot / PrimeVue scaffold
 
 Generated Vue collection pages support both page-based editing and native inline row editing through `@katren/vue-collection-lib`. Inline mode includes generated editable-column metadata, inline create drafts, and typed create payload mapping.
 
+Accumulation-register schemas generate a versioned common PostgreSQL runtime, immutable `ra_*` action ledgers, monthly/current `rg_*` aggregates, typed balance/summary functions, and Go repositories. Recorder-specific document posting remains hand-written and transactional.
+
 The generator is meant for ordinary database-backed CRUD and administrative entities. Domain workflows, transactions spanning several aggregates, parser logic, imports, image processing, and other application-specific behavior remain hand-written.
 
 ## Repository layout
@@ -31,7 +33,10 @@ The generator is meant for ordinary database-backed CRUD and administrative enti
 ```text
 cmd/codegen/                 CLI entry point
 internal/codegen/            generator implementation
-internal/codegen/templates/  embedded default templates
+internal/codegen/templates/              embedded default templates
+internal/codegen/templates/register/     generated register SQL/Go templates
+internal/codegen/templates/register/runtime/v1/
+	                                    frozen common register runtime
 docs/                        configuration and schema documentation
 examples/                    reference object specifications
 ```
@@ -111,6 +116,12 @@ apiTest:
 registries:
   enabled: true
 
+registers:
+  enabled: true
+  schemaDir: ./schema/registers
+  businessTimezone: UTC
+  runtimeVersion: 1
+
 migrations:
   enabled: true
   overwrite: false
@@ -134,6 +145,8 @@ Start with [examples/vehicle_brands.yaml](examples/vehicle_brands.yaml) for page
 
 The complete schema contract is documented in [docs/schema-reference.md](docs/schema-reference.md).
 
+Put accumulation-register schemas directly in `registers.schemaDir`. Start with [examples/materials_register.yaml](examples/materials_register.yaml). The common runtime repository, generated database functions, Go helpers, recorder transaction pattern, and migration lifecycle are documented in [docs/registers.md](docs/registers.md).
+
 ## Generated-file ownership
 
 Codegen deliberately uses two ownership modes. Files with `.gen` in their names are managed outputs and are the schema-driven source of truth; do not edit them manually. Vue list pages, edit pages, and forms are scaffolds: codegen creates them only when they do not exist, then leaves them under developer ownership.
@@ -147,7 +160,7 @@ go tool codegen check
 go test ./...
 ```
 
-`check` does not rewrite files. It fails when a managed generated target is missing or differs from the current schema/templates, or when an expected migration pair is missing/outdated. Existing manual Vue scaffolds are intentionally not compared with their original templates.
+`check` does not rewrite files. It fails when a managed generated target is missing or differs from the current schema/templates, or when an expected migration pair is missing/outdated. Concrete register migrations are immutable create-once scaffolds, so only their pair existence is checked; the frozen common register runtime remains byte-compared. Existing manual Vue scaffolds are intentionally not compared with their original templates.
 
 The generator deliberately refuses to overwrite conflicting hand-written model/service/API/frontend artifacts unless `allowManualCollisions` (or the corresponding environment override) is explicitly enabled.
 
@@ -184,6 +197,7 @@ The directory must contain the same relative template layout as the built-ins:
 ```text
 codegen-templates/
 	go/
+	register/
 	sql/
 	vue/
 ```
@@ -195,4 +209,5 @@ A template override is project-specific technical debt. Prefer evolving the shar
 - [Configuration and CLI](docs/configuration.md)
 - [Consumer integration](docs/integration.md)
 - [Object schema reference](docs/schema-reference.md)
+- [Accumulation registers](docs/registers.md)
 - [Extraction/migration guide](docs/migration-from-embedded.md)

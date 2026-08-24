@@ -1,5 +1,7 @@
 # Object schema reference
 
+This document describes ordinary CRUD object schemas from `schemaDir`. Accumulation registers use a separate schema contract and directory; see [Accumulation registers](registers.md).
+
 This document defines the YAML object language consumed by `github.com/dronm/codegen` and the output contract of the built-in Dronm application profile.
 
 The generator is intentionally aimed at ordinary database-backed CRUD and administrative entities. It generates a coherent unit:

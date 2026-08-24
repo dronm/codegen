@@ -19,7 +19,7 @@ import (
 )
 
 func Generate(cfg Config) error {
-	objects, err := prepareObjects(cfg)
+	objects, registers, err := prepareProject(cfg)
 	if err != nil {
 		return err
 	}
@@ -28,6 +28,11 @@ func Generate(cfg Config) error {
 	for _, object := range objects {
 		if err := renderer.RenderObject(object); err != nil {
 			return fmt.Errorf("render object %s: %w", object.Name, err)
+		}
+	}
+	if cfg.RegistersEnabled && len(registers) > 0 {
+		if err := renderer.RenderRegisters(registers); err != nil {
+			return fmt.Errorf("render registers: %w", err)
 		}
 	}
 
@@ -52,8 +57,36 @@ func Generate(cfg Config) error {
 }
 
 func Validate(cfg Config) error {
-	_, err := prepareObjects(cfg)
+	_, _, err := prepareProject(cfg)
 	return err
+}
+
+func prepareProject(cfg Config) ([]ObjectView, []RegisterView, error) {
+	objects, err := prepareObjects(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !cfg.RegistersEnabled {
+		return objects, nil, nil
+	}
+
+	specs, err := LoadRegisters(cfg.RegisterSchemaDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	registers := make([]RegisterView, 0, len(specs))
+	for _, spec := range specs {
+		view, err := BuildRegisterView(spec)
+		if err != nil {
+			return nil, nil, fmt.Errorf("build register %s: %w", spec.Name, err)
+		}
+		view.RuntimeVersion = cfg.RegisterRuntimeVersion
+		registers = append(registers, view)
+	}
+	if err := validateRegisterViews(objects, registers); err != nil {
+		return nil, nil, err
+	}
+	return objects, registers, nil
 }
 
 func prepareObjects(cfg Config) ([]ObjectView, error) {
@@ -536,8 +569,139 @@ func (r Renderer) RenderFrontendLocale(objects []ObjectView) error {
 	return r.renderFile(job, RoutesView{Objects: frontendObjects})
 }
 
+func (r Renderer) RenderRegisters(registers []RegisterView) error {
+	if r.Config.MigrationsEnabled {
+		needsRuntime := false
+		for _, register := range registers {
+			if register.MigrationEnabled {
+				needsRuntime = true
+				break
+			}
+		}
+		if needsRuntime {
+			if err := r.RenderRegisterRuntimeMigration(BuildRegisterRuntimeView(r.Config)); err != nil {
+				return fmt.Errorf("render common runtime: %w", err)
+			}
+		}
+	}
+
+	for _, register := range registers {
+		if r.Config.BackendEnabled {
+			if err := r.RenderRegisterGo(register); err != nil {
+				return fmt.Errorf("render %s Go helpers: %w", register.Name, err)
+			}
+		}
+		if r.Config.MigrationsEnabled && register.MigrationEnabled {
+			if err := r.RenderRegisterMigration(register); err != nil {
+				return fmt.Errorf("render %s migration: %w", register.Name, err)
+			}
+		}
+	}
+
+	if r.Config.BackendEnabled {
+		if err := r.RenderRegisterRegistry(registers); err != nil {
+			return fmt.Errorf("render Go registry: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r Renderer) RenderRegisterRuntimeMigration(runtime RegisterRuntimeView) error {
+	versionDir := fmt.Sprintf("v%d", runtime.Version)
+	return r.renderNamedMigration(
+		runtime.MigrationName,
+		filepath.Join(r.Config.TemplateDir, "register", "runtime", versionDir, "bootstrap.up.sql.tmpl"),
+		filepath.Join(r.Config.TemplateDir, "register", "runtime", versionDir, "bootstrap.down.sql.tmpl"),
+		runtime,
+	)
+}
+
+func (r Renderer) RenderRegisterMigration(register RegisterView) error {
+	return r.renderScaffoldMigration(
+		register.MigrationName,
+		filepath.Join(r.Config.TemplateDir, "register", "create.up.sql.tmpl"),
+		filepath.Join(r.Config.TemplateDir, "register", "create.down.sql.tmpl"),
+		register,
+	)
+}
+
+func (r Renderer) renderScaffoldMigration(
+	migrationName string,
+	upTemplatePath string,
+	downTemplatePath string,
+	data any,
+) error {
+	pair, existed, err := r.findMigrationPair(migrationName)
+	if err != nil {
+		return err
+	}
+	createdMigration := false
+	if !existed {
+		if r.Config.Check {
+			return fmt.Errorf("check failed: migration %s does not exist", migrationName)
+		}
+		pair, err = r.createMigration(migrationName)
+		if err != nil {
+			return err
+		}
+		createdMigration = true
+	}
+
+	if existed && r.Config.Check {
+		return nil
+	}
+	if existed && !r.Config.MigrationsOverwrite {
+		fmt.Printf("migration exists, kept immutable scaffold %s and %s\n", pair.UpPath, pair.DownPath)
+		return nil
+	}
+
+	jobs := []RenderJob{
+		{TemplatePath: upTemplatePath, TargetPath: pair.UpPath, Format: FormatNone},
+		{TemplatePath: downTemplatePath, TargetPath: pair.DownPath, Format: FormatNone},
+	}
+	for _, job := range jobs {
+		if err := r.renderFile(job, data); err != nil {
+			if createdMigration {
+				_ = os.Remove(pair.UpPath)
+				_ = os.Remove(pair.DownPath)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (r Renderer) RenderRegisterGo(register RegisterView) error {
+	return r.renderFile(RenderJob{
+		TemplatePath: filepath.Join(r.Config.TemplateDir, "register", "register.go.tmpl"),
+		TargetPath:   filepath.Join(r.Config.ServerRoot, "internal", "registers", register.FileBase+".gen.go"),
+		Format:       FormatGo,
+	}, register)
+}
+
+func (r Renderer) RenderRegisterRegistry(registers []RegisterView) error {
+	return r.renderFile(RenderJob{
+		TemplatePath: filepath.Join(r.Config.TemplateDir, "register", "registry.go.tmpl"),
+		TargetPath:   filepath.Join(r.Config.ServerRoot, "internal", "registers", "registry.gen.go"),
+		Format:       FormatGo,
+	}, RegistersView{Registers: registers})
+}
+
 func (r Renderer) RenderMigration(model ObjectView) error {
-	migrationName := model.Migration.Name
+	return r.renderNamedMigration(
+		model.Migration.Name,
+		filepath.Join(r.Config.TemplateDir, "sql", "create.up.sql.tmpl"),
+		filepath.Join(r.Config.TemplateDir, "sql", "create.down.sql.tmpl"),
+		model,
+	)
+}
+
+func (r Renderer) renderNamedMigration(
+	migrationName string,
+	upTemplatePath string,
+	downTemplatePath string,
+	data any,
+) error {
 	pair, existed, err := r.findMigrationPair(migrationName)
 	if err != nil {
 		return err
@@ -563,19 +727,19 @@ func (r Renderer) RenderMigration(model ObjectView) error {
 
 	jobs := []RenderJob{
 		{
-			TemplatePath: filepath.Join(r.Config.TemplateDir, "sql", "create.up.sql.tmpl"),
+			TemplatePath: upTemplatePath,
 			TargetPath:   pair.UpPath,
 			Format:       FormatNone,
 		},
 		{
-			TemplatePath: filepath.Join(r.Config.TemplateDir, "sql", "create.down.sql.tmpl"),
+			TemplatePath: downTemplatePath,
 			TargetPath:   pair.DownPath,
 			Format:       FormatNone,
 		},
 	}
 
 	for _, job := range jobs {
-		if err := r.renderFile(job, model); err != nil {
+		if err := r.renderFile(job, data); err != nil {
 			if createdMigration {
 				_ = os.Remove(pair.UpPath)
 				_ = os.Remove(pair.DownPath)

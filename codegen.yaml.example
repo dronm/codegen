@@ -15,6 +15,12 @@ apiTest:
 registries:
   enabled: true
 
+registers:
+  enabled: true
+  schemaDir: ./schema/registers
+  businessTimezone: UTC
+  runtimeVersion: 1
+
 migrations:
   enabled: true
   overwrite: false

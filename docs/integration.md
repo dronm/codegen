@@ -11,6 +11,7 @@ CLI and generator implementation
 schema parser and validation
 naming and collision rules
 built-in Go/SQL/Vue templates
+versioned common register runtime templates
 schema documentation and examples
 ```
 
@@ -22,6 +23,7 @@ schema/*.yaml
 generated .gen.* source files
 generated migration drafts
 hand-written domain extensions
+schema/registers/*.yaml
 ```
 
 The application must not copy `cmd/codegen` or the default templates into its repository.
@@ -108,6 +110,20 @@ services.RegisterGeneratedServices()
 ```
 
 These hook calls are application integration points; they are not generated because startup layout is application-owned.
+
+## Register integration
+
+When register schemas are present, backend generation writes typed helpers and a common registry under:
+
+```text
+internal/registers/*.gen.go
+```
+
+These files are ordinary managed generated output. Document services should call the generated recorder lock and concrete add/remove helpers using the same `ds.Querier` transaction that saves the document and its lines. Recorder-specific document-to-action mapping stays in hand-written service extensions.
+
+The first generated register also causes the pinned common runtime migration to be created before its concrete register migration. Commit both migration pairs. An application does not import SQL or templates from Codegen at runtime.
+
+See [Accumulation registers](registers.md) for posting, interval, rebuild, and migration ownership rules.
 
 ## Frontend integration
 

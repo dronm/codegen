@@ -20,6 +20,7 @@ type Config struct {
 	ProjectRoot            string
 	ConfigPath             string
 	SchemaDir              string
+	RegisterSchemaDir      string
 	TemplateDir            string
 	ServerRoot             string
 	FrontendRoot           string
@@ -32,6 +33,9 @@ type Config struct {
 	FrontendEnabled        bool
 	APITestEnabled         bool
 	RegistriesEnabled      bool
+	RegistersEnabled       bool
+	RegisterBusinessTZ     string
+	RegisterRuntimeVersion int
 	MigrationsEnabled      bool
 	MigrationsOverwrite    bool
 	AllowManualCollisions  bool
@@ -56,11 +60,19 @@ type configFile struct {
 	Frontend              configEnabledSection    `yaml:"frontend"`
 	APITest               configEnabledSection    `yaml:"apiTest"`
 	Registries            configEnabledSection    `yaml:"registries"`
+	Registers             configRegistersSection  `yaml:"registers"`
 	Migrations            configMigrationsSection `yaml:"migrations"`
 }
 
 type configEnabledSection struct {
 	Enabled *bool `yaml:"enabled"`
+}
+
+type configRegistersSection struct {
+	Enabled          *bool  `yaml:"enabled"`
+	SchemaDir        string `yaml:"schemaDir"`
+	BusinessTimezone string `yaml:"businessTimezone"`
+	RuntimeVersion   int    `yaml:"runtimeVersion"`
 }
 
 type configMigrationsSection struct {
@@ -77,6 +89,7 @@ func DefaultConfig(projectRoot string) Config {
 	return Config{
 		ProjectRoot:            cleanPath(projectRoot),
 		SchemaDir:              "./schema",
+		RegisterSchemaDir:      "./schema/registers",
 		TemplateDir:            "",
 		ServerRoot:             ".",
 		FrontendRoot:           "../front",
@@ -87,6 +100,9 @@ func DefaultConfig(projectRoot string) Config {
 		FrontendEnabled:        false,
 		APITestEnabled:         true,
 		RegistriesEnabled:      true,
+		RegistersEnabled:       true,
+		RegisterBusinessTZ:     "UTC",
+		RegisterRuntimeVersion: 1,
 		MigrationsEnabled:      true,
 		MigrationsOverwrite:    false,
 		AllowManualCollisions:  false,
@@ -210,6 +226,12 @@ func applyConfigFile(cfg *Config, fileCfg configFile) {
 	setBool(&cfg.FrontendEnabled, fileCfg.Frontend.Enabled)
 	setBool(&cfg.APITestEnabled, fileCfg.APITest.Enabled)
 	setBool(&cfg.RegistriesEnabled, fileCfg.Registries.Enabled)
+	setBool(&cfg.RegistersEnabled, fileCfg.Registers.Enabled)
+	setString(&cfg.RegisterSchemaDir, fileCfg.Registers.SchemaDir)
+	setString(&cfg.RegisterBusinessTZ, fileCfg.Registers.BusinessTimezone)
+	if fileCfg.Registers.RuntimeVersion != 0 {
+		cfg.RegisterRuntimeVersion = fileCfg.Registers.RuntimeVersion
+	}
 	setBool(&cfg.MigrationsEnabled, fileCfg.Migrations.Enabled)
 	setBool(&cfg.MigrationsOverwrite, fileCfg.Migrations.Overwrite)
 	setString(&cfg.MigrationCreateMode, fileCfg.Migrations.CreateMode)
@@ -240,6 +262,7 @@ func applyEnvironment(cfg *Config, values map[string]string) error {
 		"CODEGEN_FRONTEND_ENABLED",
 		"CODEGEN_APITEST_ENABLED",
 		"CODEGEN_REGISTRIES_ENABLED",
+		"CODEGEN_REGISTERS_ENABLED",
 		"CODEGEN_MIGRATIONS_ENABLED",
 		"CODEGEN_MIGRATIONS_OVERWRITE",
 		"CODEGEN_ALLOW_MANUAL_COLLISIONS",
@@ -250,6 +273,7 @@ func applyEnvironment(cfg *Config, values map[string]string) error {
 
 	var err error
 	cfg.SchemaDir = stringOverride(values, "CODEGEN_SCHEMA_DIR", cfg.SchemaDir)
+	cfg.RegisterSchemaDir = stringOverride(values, "CODEGEN_REGISTER_SCHEMA_DIR", cfg.RegisterSchemaDir)
 	cfg.TemplateDir = stringOverrideAllowEmpty(values, "CODEGEN_TEMPLATE_DIR", cfg.TemplateDir)
 	cfg.ServerRoot = stringOverride(values, "CODEGEN_SERVER_ROOT", cfg.ServerRoot)
 	cfg.FrontendRoot = stringOverride(values, "CODEGEN_FRONTEND_ROOT", cfg.FrontendRoot)
@@ -260,23 +284,30 @@ func applyEnvironment(cfg *Config, values map[string]string) error {
 	cfg.MigrationCreateMode = strings.ToLower(stringOverride(values, "CODEGEN_MIGRATION_CREATE_MODE", cfg.MigrationCreateMode))
 	cfg.MigrationCreateBin = stringOverride(values, "CODEGEN_MIGRATION_CREATE_BIN", cfg.MigrationCreateBin)
 	cfg.MigrationCreateExt = strings.TrimPrefix(stringOverride(values, "CODEGEN_MIGRATION_CREATE_EXT", cfg.MigrationCreateExt), ".")
+	cfg.RegisterBusinessTZ = stringOverride(values, "CODEGEN_REGISTER_BUSINESS_TIMEZONE", cfg.RegisterBusinessTZ)
 
 	cfg.Check = boolOverride(values, "CODEGEN_CHECK", cfg.Check)
 	cfg.BackendEnabled = boolOverride(values, "CODEGEN_BACKEND_ENABLED", cfg.BackendEnabled)
 	cfg.FrontendEnabled = boolOverride(values, "CODEGEN_FRONTEND_ENABLED", cfg.FrontendEnabled)
 	cfg.APITestEnabled = boolOverride(values, "CODEGEN_APITEST_ENABLED", cfg.APITestEnabled)
 	cfg.RegistriesEnabled = boolOverride(values, "CODEGEN_REGISTRIES_ENABLED", cfg.RegistriesEnabled)
+	cfg.RegistersEnabled = boolOverride(values, "CODEGEN_REGISTERS_ENABLED", cfg.RegistersEnabled)
 	cfg.MigrationsEnabled = boolOverride(values, "CODEGEN_MIGRATIONS_ENABLED", cfg.MigrationsEnabled)
 	cfg.MigrationsOverwrite = boolOverride(values, "CODEGEN_MIGRATIONS_OVERWRITE", cfg.MigrationsOverwrite)
 	cfg.AllowManualCollisions = boolOverride(values, "CODEGEN_ALLOW_MANUAL_COLLISIONS", cfg.AllowManualCollisions)
 	cfg.MigrationCreateSeq = boolOverride(values, "CODEGEN_MIGRATION_CREATE_SEQ", cfg.MigrationCreateSeq)
 	cfg.MigrationSequenceWidth, err = intOverride(values, "CODEGEN_MIGRATION_SEQUENCE_WIDTH", cfg.MigrationSequenceWidth)
+	if err != nil {
+		return err
+	}
+	cfg.RegisterRuntimeVersion, err = intOverride(values, "CODEGEN_REGISTER_RUNTIME_VERSION", cfg.RegisterRuntimeVersion)
 	return err
 }
 
 func finalizeConfig(cfg *Config) error {
 	cfg.ProjectRoot = cleanPath(cfg.ProjectRoot)
 	cfg.SchemaDir = resolveProjectPath(cfg.ProjectRoot, cfg.SchemaDir)
+	cfg.RegisterSchemaDir = resolveProjectPath(cfg.ProjectRoot, cfg.RegisterSchemaDir)
 	cfg.ServerRoot = resolveProjectPath(cfg.ProjectRoot, cfg.ServerRoot)
 	cfg.FrontendRoot = resolveProjectPath(cfg.ProjectRoot, cfg.FrontendRoot)
 	cfg.MigrationsDir = resolveProjectPath(cfg.ProjectRoot, cfg.MigrationsDir)
@@ -300,6 +331,12 @@ func finalizeConfig(cfg *Config) error {
 	}
 	if cfg.GoFilterTagName == "" {
 		return fmt.Errorf("CODEGEN_GO_FILTER_TAG/goFilterTagName must not be empty")
+	}
+	if strings.TrimSpace(cfg.RegisterBusinessTZ) == "" {
+		return fmt.Errorf("registers.businessTimezone must not be empty")
+	}
+	if cfg.RegisterRuntimeVersion != 1 {
+		return fmt.Errorf("unsupported register runtime version %d; this codegen release supports version 1", cfg.RegisterRuntimeVersion)
 	}
 	if cfg.MigrationSequenceWidth < 1 || cfg.MigrationSequenceWidth > 12 {
 		return fmt.Errorf("migration sequence width must be between 1 and 12")

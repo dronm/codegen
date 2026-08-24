@@ -1685,6 +1685,37 @@ func TestDefaultConfigUsesEmbeddedTemplates(t *testing.T) {
 	}
 }
 
+func TestConfigFileLoadsRegisterSettings(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "codegen.yaml")
+	content := `
+registers:
+  enabled: false
+  schemaDir: ./db/registers
+  businessTimezone: Asia/Yekaterinburg
+  runtimeVersion: 1
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	fileConfig, err := readConfigFile(path)
+	if err != nil {
+		t.Fatalf("readConfigFile(): %v", err)
+	}
+	cfg := DefaultConfig(t.TempDir())
+	applyConfigFile(&cfg, fileConfig)
+	if cfg.RegisterSchemaDir != "./db/registers" {
+		t.Fatalf("unexpected register schema dir %q", cfg.RegisterSchemaDir)
+	}
+	if cfg.RegisterBusinessTZ != "Asia/Yekaterinburg" {
+		t.Fatalf("unexpected register timezone %q", cfg.RegisterBusinessTZ)
+	}
+	if cfg.RegisterRuntimeVersion != 1 || cfg.RegistersEnabled {
+		t.Fatalf("unexpected register configuration: %+v", cfg)
+	}
+}
+
 func TestEmbeddedTemplatesAreAvailable(t *testing.T) {
 	t.Parallel()
 
@@ -1698,6 +1729,308 @@ func TestEmbeddedTemplatesAreAvailable(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "package models") {
 		t.Fatalf("unexpected embedded model template content")
+	}
+	runtime, label, err := renderer.readTemplate(filepath.Join("register", "runtime", "v1", "bootstrap.up.sql.tmpl"))
+	if err != nil {
+		t.Fatalf("readTemplate(register runtime): %v", err)
+	}
+	if !strings.Contains(label, "templates/register/runtime/v1/bootstrap.up.sql.tmpl") {
+		t.Fatalf("unexpected embedded register runtime label %q", label)
+	}
+	if !strings.Contains(string(runtime), "register_runtime_version") {
+		t.Fatalf("unexpected embedded register runtime template content")
+	}
+}
+
+func TestLoadRegistersSupportsAccumulationRegister(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	content := `
+name: Materials
+comment: Material stock by construction site.
+kind: accumulation
+period: month
+dimensions:
+  - name: construction_site_id
+    type: int
+    references:
+      table: construction_sites
+      column: id
+  - name: material_id
+    type: int
+    references:
+      table: materials
+      column: id
+resources:
+  - name: quant
+    type: numeric
+    sqlType: numeric(19, 4)
+`
+	if err := os.WriteFile(filepath.Join(dir, "materials.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	registers, err := LoadRegisters(dir)
+	if err != nil {
+		t.Fatalf("LoadRegisters(): %v", err)
+	}
+	if len(registers) != 1 {
+		t.Fatalf("expected one register, got %d", len(registers))
+	}
+	view, err := BuildRegisterView(registers[0])
+	if err != nil {
+		t.Fatalf("BuildRegisterView(): %v", err)
+	}
+	if view.ActionRelation != "public.ra_materials" {
+		t.Fatalf("unexpected action relation %q", view.ActionRelation)
+	}
+	if view.Resources[0].SQLType != "numeric(19, 4)" {
+		t.Fatalf("unexpected resource SQL type %q", view.Resources[0].SQLType)
+	}
+	if view.Dimensions[0].FilterName != "construction_site_ids" {
+		t.Fatalf("unexpected dimension filter %q", view.Dimensions[0].FilterName)
+	}
+}
+
+func TestLoadRegistersAllowsMissingDefaultDirectory(t *testing.T) {
+	t.Parallel()
+
+	registers, err := LoadRegisters(filepath.Join(t.TempDir(), "registers"))
+	if err != nil {
+		t.Fatalf("LoadRegisters(): %v", err)
+	}
+	if len(registers) != 0 {
+		t.Fatalf("expected no registers, got %d", len(registers))
+	}
+}
+
+func TestRegisterValidationRejectsUnsupportedAndDuplicateFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		edit func(*RegisterSpec)
+		want string
+	}{
+		{
+			name: "period",
+			edit: func(spec *RegisterSpec) { spec.Period = "day" },
+			want: "supports month",
+		},
+		{
+			name: "nullable-like-resource",
+			edit: func(spec *RegisterSpec) { spec.Resources[0].Type = "string" },
+			want: "resources support numeric, int, and bigint",
+		},
+		{
+			name: "duplicate",
+			edit: func(spec *RegisterSpec) { spec.Resources[0].Name = spec.Dimensions[0].Name },
+			want: "duplicates dimension",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			spec := materialsRegisterSpec()
+			test.edit(&spec)
+			err := spec.Validate()
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected error containing %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestRenderRegistersCreatesRuntimeMigrationFirst(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := testConfig(t)
+	cfg.ServerRoot = root
+	cfg.MigrationsDir = filepath.Join(root, "migrations")
+	cfg.MigrationsEnabled = true
+	cfg.BackendEnabled = true
+	cfg.RegistersEnabled = true
+	cfg.RegisterBusinessTZ = "Asia/Yekaterinburg"
+	cfg.RegisterRuntimeVersion = 1
+
+	view, err := BuildRegisterView(materialsRegisterSpec())
+	if err != nil {
+		t.Fatalf("BuildRegisterView(): %v", err)
+	}
+	view.RuntimeVersion = cfg.RegisterRuntimeVersion
+	if err := NewRenderer(cfg).RenderRegisters([]RegisterView{view}); err != nil {
+		t.Fatalf("RenderRegisters(): %v", err)
+	}
+
+	common := readTestFile(t, filepath.Join(cfg.MigrationsDir, "000001_register_common_v1.up.sql"))
+	for _, expected := range []string{
+		"codegen:register-runtime version=1",
+		"CREATE TABLE public.register_settings",
+		"VALUES (1, 'Asia/Yekaterinburg')",
+		"register_runtime_version()",
+	} {
+		if !strings.Contains(common, expected) {
+			t.Fatalf("common register migration missing %q\n%s", expected, common)
+		}
+	}
+
+	registerSQL := readTestFile(t, filepath.Join(cfg.MigrationsDir, "000002_create_materials_register.up.sql"))
+	for _, expected := range []string{
+		"CREATE TABLE public.ra_materials",
+		"CREATE TABLE public.rg_materials_period",
+		"CREATE TABLE public.rg_materials_current",
+		"public.rg_materials_apply_delta",
+		"public.rg_materials_balance",
+		"public.rg_materials_summary",
+		"action.effective_at >= in_from",
+		"action.effective_at < in_to",
+	} {
+		if !strings.Contains(registerSQL, expected) {
+			t.Fatalf("register migration missing %q\n%s", expected, registerSQL)
+		}
+	}
+
+	registerGo := readTestFile(t, filepath.Join(root, "internal", "registers", "materials.gen.go"))
+	for _, expected := range []string{
+		"type MaterialsAction struct",
+		"func AddMaterialsAction(",
+		"func MaterialsBalanceAt(",
+		"func SummarizeMaterials(",
+	} {
+		if !strings.Contains(registerGo, expected) {
+			t.Fatalf("generated register Go helper missing %q\n%s", expected, registerGo)
+		}
+	}
+
+	registryGo := readTestFile(t, filepath.Join(root, "internal", "registers", "registry.gen.go"))
+	if !strings.Contains(registryGo, `namespace := "register:" + registerName + ":" + recorderType`) {
+		t.Fatalf("register registry does not namespace recorder locks\n%s", registryGo)
+	}
+}
+
+func TestRenderRegisterRuntimeCheckDetectsChanges(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := testConfig(t)
+	cfg.MigrationsDir = filepath.Join(root, "migrations")
+	cfg.MigrationsEnabled = true
+	cfg.RegisterBusinessTZ = "UTC"
+	cfg.RegisterRuntimeVersion = 1
+	renderer := NewRenderer(cfg)
+	runtime := BuildRegisterRuntimeView(cfg)
+	if err := renderer.RenderRegisterRuntimeMigration(runtime); err != nil {
+		t.Fatalf("RenderRegisterRuntimeMigration(): %v", err)
+	}
+	pair, exists, err := renderer.findMigrationPair(runtime.MigrationName)
+	if err != nil || !exists {
+		t.Fatalf("findMigrationPair(): exists=%v err=%v", exists, err)
+	}
+	if err := os.WriteFile(pair.UpPath, []byte("changed\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	cfg.Check = true
+	err = NewRenderer(cfg).RenderRegisterRuntimeMigration(runtime)
+	if err == nil || !strings.Contains(err.Error(), "is outdated") {
+		t.Fatalf("expected outdated runtime migration error, got %v", err)
+	}
+}
+
+func TestRenderRegisterSupportsStringDimensionAndMultipleResources(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := testConfig(t)
+	cfg.ServerRoot = root
+	cfg.MigrationsDir = filepath.Join(root, "migrations")
+	cfg.MigrationsEnabled = true
+
+	spec := RegisterSpec{
+		Name:   "AccountTurnovers",
+		Schema: "accounting",
+		Dimensions: []RegisterDimensionSpec{
+			{Name: "account_code", Type: "string", SQLType: "varchar(20)"},
+		},
+		Resources: []RegisterResourceSpec{
+			{Name: "amount", Type: "numeric", SQLType: "numeric(15, 2)"},
+			{Name: "entries", Type: "bigint"},
+		},
+	}
+	view, err := BuildRegisterView(spec)
+	if err != nil {
+		t.Fatalf("BuildRegisterView(): %v", err)
+	}
+	view.RuntimeVersion = 1
+	renderer := NewRenderer(cfg)
+	if err := renderer.RenderRegisterGo(view); err != nil {
+		t.Fatalf("RenderRegisterGo(): %v", err)
+	}
+	if err := renderer.RenderRegisterMigration(view); err != nil {
+		t.Fatalf("RenderRegisterMigration(): %v", err)
+	}
+
+	generatedGo := readTestFile(t, filepath.Join(root, "internal", "registers", "accountTurnovers.gen.go"))
+	for _, expected := range []string{
+		"AccountCode string",
+		"Amount float64",
+		"Entries int64",
+		"action.Amount == 0 && action.Entries == 0",
+	} {
+		if !strings.Contains(generatedGo, expected) {
+			t.Fatalf("multi-resource Go output missing %q\n%s", expected, generatedGo)
+		}
+	}
+
+	pair, exists, err := renderer.findMigrationPair(view.MigrationName)
+	if err != nil || !exists {
+		t.Fatalf("findMigrationPair(): exists=%v err=%v", exists, err)
+	}
+	generatedSQL := readTestFile(t, pair.UpPath)
+	for _, expected := range []string{
+		"amount <> 0",
+		"OR entries <> 0",
+		"amount_opening numeric(15, 2)",
+		"entries_closing bigint",
+	} {
+		if !strings.Contains(generatedSQL, expected) {
+			t.Fatalf("multi-resource SQL output missing %q\n%s", expected, generatedSQL)
+		}
+	}
+}
+
+func materialsRegisterSpec() RegisterSpec {
+	return RegisterSpec{
+		Name:    "Materials",
+		Comment: "Material stock by construction site.",
+		Kind:    "accumulation",
+		Period:  "month",
+		Dimensions: []RegisterDimensionSpec{
+			{
+				Name: "construction_site_id",
+				Type: "int",
+				References: &ReferenceSpec{
+					Schema: "public",
+					Table:  "construction_sites",
+					Column: "id",
+				},
+			},
+			{
+				Name: "material_id",
+				Type: "int",
+				References: &ReferenceSpec{
+					Schema: "public",
+					Table:  "materials",
+					Column: "id",
+				},
+			},
+		},
+		Resources: []RegisterResourceSpec{
+			{Name: "quant", Type: "numeric", SQLType: "numeric(19, 4)"},
+		},
 	}
 }
 
@@ -1738,6 +2071,7 @@ func TestFinalizeConfigResolvesPathsFromProjectRoot(t *testing.T) {
 		}
 	}
 	assertPath("schema", cfg.SchemaDir, filepath.Join(root, "schema"))
+	assertPath("register schema", cfg.RegisterSchemaDir, filepath.Join(root, "schema", "registers"))
 	assertPath("server", cfg.ServerRoot, root)
 	assertPath("frontend", cfg.FrontendRoot, filepath.Join(root, "web"))
 	assertPath("migrations", cfg.MigrationsDir, filepath.Join(root, "db", "migrations"))

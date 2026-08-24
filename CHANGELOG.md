@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- added monthly accumulation-register schemas with typed dimensions and additive resources;
+- added the embedded, versioned register common-runtime repository and automatic bootstrap migration;
+- generated immutable action ledgers, monthly/current aggregates, balance, summary, and rebuild functions;
+- generated typed Go register repositories, namespaced recorder locking, and rebuild registry operations;
+- documented register configuration, schema ownership, migration lifecycle, recorder posting, and timezone rebuilds;
 - added `service.manualMethods` for per-operation hand-written Go service implementations while retaining generated routes, permissions, models, and frontend contracts;
 - added validation for missing manually owned service methods and generated/manual receiver-method collisions;
 - added `frontend.list.editMode: inline` for generated Vue collection pages;

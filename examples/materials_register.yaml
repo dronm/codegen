@@ -1,0 +1,33 @@
+name: Materials
+comment: Material stock by construction site.
+kind: accumulation
+period: month
+
+dimensions:
+  - name: construction_site_id
+    type: int
+    comment: Construction site holding the material stock.
+    references:
+      schema: public
+      table: construction_sites
+      column: id
+      onDelete: RESTRICT
+
+  - name: material_id
+    type: int
+    comment: Material whose stock is changed by the action.
+    references:
+      schema: public
+      table: materials
+      column: id
+      onDelete: RESTRICT
+
+resources:
+  - name: quant
+    type: numeric
+    sqlType: numeric(19, 4)
+    comment: Signed quantity; positive values add stock and negative values remove stock.
+
+migration:
+  enabled: true
+  name: create_materials_register

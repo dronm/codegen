@@ -24,7 +24,7 @@ Loads and validates all active schemas, checks manual ownership collisions, then
 
 ### `check`
 
-Runs the same render pipeline without writing. Every managed generated target must already exist and match byte-for-byte. Existing manual Vue scaffolds only need to exist; their contents are developer-owned and are not compared with the original templates. Existing migration SQL is rendered and compared as well.
+Runs the same render pipeline without writing. Every managed generated target must already exist and match byte-for-byte. Existing manual Vue scaffolds only need to exist; their contents are developer-owned and are not compared with the original templates. Object migrations and the frozen common register runtime are rendered and compared. Concrete register migrations are immutable create-once scaffolds, so `check` verifies that their complete pair exists without comparing historical SQL to the current register schema.
 
 This is intended for CI.
 
@@ -92,6 +92,12 @@ apiTest:
 registries:
   enabled: true
 
+registers:
+  enabled: true
+  schemaDir: ./schema/registers
+  businessTimezone: UTC
+  runtimeVersion: 1
+
 migrations:
   enabled: true
   overwrite: false
@@ -130,7 +136,18 @@ Unknown YAML properties are rejected.
 | `frontend.enabled` | `false` | Generate TypeScript/Valibot/API and enabled Vue scaffolds. |
 | `apiTest.enabled` | `true` | Allow API integration-test generation when an object enables it. |
 | `registries.enabled` | `true` | Generate backend and/or frontend registries. |
+| `registers.enabled` | `true` | Load register schemas and generate register migrations/Go repositories. |
 | `migrations.enabled` | `true` | Generate migration pairs for objects that enable migrations. |
+
+### Register section
+
+| Property | Default | Meaning |
+|---|---|---|
+| `registers.schemaDir` | `./schema/registers` | Directory containing active accumulation-register specifications. A missing directory is allowed. |
+| `registers.businessTimezone` | `UTC` | Initial PostgreSQL/IANA business timezone inserted by the common runtime migration. |
+| `registers.runtimeVersion` | `1` | Pinned common register runtime version. This release supports version 1. |
+
+See [Accumulation registers](registers.md) for the separate register schema contract and runtime migration lifecycle.
 
 ### Migration section
 
@@ -150,6 +167,7 @@ The previous `CODEGEN_*` contract remains supported:
 | Variable | Corresponding configuration |
 |---|---|
 | `CODEGEN_SCHEMA_DIR` | `schemaDir` |
+| `CODEGEN_REGISTER_SCHEMA_DIR` | `registers.schemaDir` |
 | `CODEGEN_TEMPLATE_DIR` | `templateDir` |
 | `CODEGEN_SERVER_ROOT` | `serverRoot` |
 | `CODEGEN_FRONTEND_ROOT` | `frontendRoot` |
@@ -161,6 +179,9 @@ The previous `CODEGEN_*` contract remains supported:
 | `CODEGEN_FRONTEND_ENABLED` | `frontend.enabled` |
 | `CODEGEN_APITEST_ENABLED` | `apiTest.enabled` |
 | `CODEGEN_REGISTRIES_ENABLED` | `registries.enabled` |
+| `CODEGEN_REGISTERS_ENABLED` | `registers.enabled` |
+| `CODEGEN_REGISTER_BUSINESS_TIMEZONE` | `registers.businessTimezone` |
+| `CODEGEN_REGISTER_RUNTIME_VERSION` | `registers.runtimeVersion` |
 | `CODEGEN_MIGRATIONS_ENABLED` | `migrations.enabled` |
 | `CODEGEN_MIGRATIONS_OVERWRITE` | `migrations.overwrite` |
 | `CODEGEN_ALLOW_MANUAL_COLLISIONS` | `allowManualCollisions` |
@@ -182,7 +203,7 @@ With no `templateDir`, templates are read from the generator executable itself. 
 1. the generator version and its templates are versioned together;
 2. child projects cannot accidentally run a newer generator against stale copied templates.
 
-A custom `templateDir` is resolved relative to `codegen.yaml` and must provide the normal `go/`, `sql/`, and `vue/` subtrees.
+A custom `templateDir` is resolved relative to `codegen.yaml` and must provide the normal `go/`, `sql/`, `vue/`, and `register/` subtrees for every enabled feature. The register subtree includes the pinned `register/runtime/v1/` common repository.
 
 
 ## Vue scaffold ownership migration
