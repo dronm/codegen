@@ -240,7 +240,7 @@ This fixes the former generator behavior that treated every entity as a single i
 
 ### 2.4 Custom collection projection
 
-An object can select list rows from a view or a different table while detail/create/update use the base table:
+An object can select list rows from a view or a different table while create/update use the base table. Detail uses the base table unless `detail` is configured:
 
 ```yaml
 list:
@@ -262,6 +262,68 @@ The generator creates the list model and makes `List` return:
 ```go
 wmodels.CollectionResponse[*models.ProductList]
 ```
+
+### 2.5 Custom detail projection
+
+Set top-level `detail` using the same shape as `list` (`model`, `table`, `fields`,
+and optional `comment`). List and detail projections are independent.
+
+```yaml
+detail:
+  model: ProductDetail
+  table:
+    schema: public
+    name: products_detail
+  fields:
+    - name: id
+      type: int
+      primaryKey: true
+    - name: name
+      type: text
+      required: true
+    - name: measure_unit_id
+      type: int
+      nullable: true
+    - name: measure_unit
+      type: jsonb
+      nullable: true
+```
+
+`ProductService.Detail` returns `*models.ProductDetail` and selects from
+`public.products_detail` using the existing key parameters, including composite
+keys. Create, update, and delete continue to use the base table and model.
+Without `detail`, the existing base-model detail behavior is preserved.
+
+The projection model is generated in the object's existing Go model file.
+Frontend generation additionally produces `types/productDetail.gen.ts` and
+`schemas/productDetail.gen.ts`, including DTO conversion. The API detail result,
+collection detail generic, and generated edit page use this projection. Base
+create/update types and schemas still derive from top-level `fields`.
+
+Rules:
+
+- `model` must differ from the base model and `list.model`; generated model and
+  filename collisions with other objects are rejected.
+- `fields` is the complete projection, not a list of extra fields. Include all
+  key columns with the same Go types. With frontend generation enabled, key
+  JSON names and required TypeScript types must also match the base keys.
+- For generated edit forms, include the base writable fields with compatible
+  TypeScript types and optionality. Extra reference fields are returned by the
+  API; form controls continue to derive from the base fields.
+- `nullable`, JSON mappings, type overrides, and Valibot overrides work as for
+  list fields. Use `frontend.detailTypeImports` and
+  `frontend.detailSchemaImports` for projection-specific imports, with the same
+  import-entry shape as `listTypeImports` and `listSchemaImports`.
+- Define the SQL view and any reference functions in your project migrations.
+  The generator does not create projection views automatically. Each key must
+  identify one row in the view.
+- If `detail` is in `service.manualMethods`, the custom implementation must
+  return the configured projection; the generator still emits its model and
+  frontend contract.
+
+See `examples/products_detail.yaml` for a complete object definition. When using
+an external template directory, update the Go/Vue templates and include the new
+`vue/detailTypes.ts.tmpl` and `vue/detailSchemas.ts.tmpl` files.
 
 ---
 

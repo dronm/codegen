@@ -215,7 +215,7 @@ func (s *{{ .Name }}Service) Detail(
 	{{ .Name }} {{ .GoType }},
 {{- end }}
 {{- end }}
-) (*models.{{ .Name }}, error) {
+) (*models.{{ .DetailModelName }}, error) {
 {{- if .SessionRequired }}
 	if err := s.requireSession(); err != nil {
 		return nil, err
@@ -258,7 +258,7 @@ func (s *{{ .Name }}Service) Detail(
 {{- end }}
 		},
 {{- end }}
-		&models.{{ .Name }}{},
+		&models.{{ .DetailModelName }}{},
 	)
 	if err != nil {
 		if errors.Is(err, ds.ErrNoRows) {

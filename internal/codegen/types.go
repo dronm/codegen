@@ -28,6 +28,12 @@ type ObjectView struct {
 	ListRelation         string
 	ListComment          string
 	HasCustomList        bool
+	DetailModelName      string
+	DetailCamel          string
+	DetailFileBase       string
+	DetailRelation       string
+	DetailComment        string
+	HasCustomDetail      bool
 	Route                string
 	ItemRoute            string
 	PermissionPrefix     string
@@ -41,16 +47,19 @@ type ObjectView struct {
 	CompositeKey         bool
 	Keys                 []KeyView
 	Fields               []FieldView
+	DetailFields         []FieldView
 	ListFields           []FieldView
 	CreateFields         []FieldView
 	UpdateFields         []FieldView
 	FrontendFields       []FieldView
+	FrontendDetailFields []FieldView
 	FrontendListFields   []FieldView
 	FrontendCreateFields []FieldView
 	FrontendUpdateFields []FieldView
 	FrontendKeys         []KeyView
 	Frontend             FrontendView
 	CommonSchemas        []string
+	DetailCommonSchemas  []string
 	ListCommonSchemas    []string
 	CRUD                 CRUDSpec
 	GeneratedServiceCRUD CRUDSpec
@@ -117,16 +126,18 @@ type FieldView struct {
 }
 
 type FrontendView struct {
-	Scaffold          bool
-	Title             string
-	TypeImports       []FrontendImportView
-	SchemaImports     []FrontendImportView
-	ListTypeImports   []FrontendImportView
-	ListSchemaImports []FrontendImportView
-	Form              FrontendFormView
-	List              FrontendListView
-	Routes            FrontendRoutesView
-	LocaleFields      []FrontendLocaleFieldView
+	Scaffold            bool
+	Title               string
+	TypeImports         []FrontendImportView
+	SchemaImports       []FrontendImportView
+	DetailTypeImports   []FrontendImportView
+	DetailSchemaImports []FrontendImportView
+	ListTypeImports     []FrontendImportView
+	ListSchemaImports   []FrontendImportView
+	Form                FrontendFormView
+	List                FrontendListView
+	Routes              FrontendRoutesView
+	LocaleFields        []FrontendLocaleFieldView
 }
 
 type FrontendLocaleFieldView struct {
@@ -441,6 +452,60 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 		}
 	}
 
+	view.DetailModelName = view.Name
+	view.DetailCamel = view.Camel
+	view.DetailFileBase = view.FileBase
+	view.DetailRelation = view.Relation
+	view.DetailComment = view.Comment
+	view.DetailFields = view.Fields
+	view.FrontendDetailFields = view.FrontendFields
+	if spec.Detail != nil {
+		view.HasCustomDetail = true
+		view.DetailModelName = PascalCase(spec.Detail.Model)
+		view.DetailCamel = CamelCase(view.DetailModelName)
+		view.DetailFileBase = CamelCase(view.DetailModelName)
+		view.DetailRelation = relationName(schemaOrPublic(spec.Detail.Table.Schema), spec.Detail.Table.Name)
+		view.DetailComment = oneLineText(spec.Detail.Comment)
+		if view.DetailComment == "" {
+			view.DetailComment = view.DetailModelName + " is the detail projection for " + view.HumanPlural + "."
+		}
+		view.DetailFields = nil
+		view.FrontendDetailFields = nil
+		for _, field := range spec.Detail.Fields {
+			fieldView, err := BuildFieldView(cfg, field, false)
+			if err != nil {
+				return ObjectView{}, fmt.Errorf("detail field: %w", err)
+			}
+			view.DetailFields = append(view.DetailFields, fieldView)
+			if fieldView.JSONEnabled {
+				view.FrontendDetailFields = append(view.FrontendDetailFields, fieldView)
+			}
+			if strings.Contains(fieldView.GoType, "time.Time") {
+				view.NeedsTimeImport = true
+			}
+		}
+	}
+
+	if view.HasCustomDetail {
+		for _, key := range view.Keys {
+			found := false
+			for _, field := range view.DetailFields {
+				if field.Name == key.Name {
+					found = true
+					if field.GoType != key.GoType {
+						return ObjectView{}, fmt.Errorf("detail key field %s must have Go type %s", key.Name, key.GoType)
+					}
+					if cfg.FrontendEnabled && (!field.JSONEnabled || field.TSName != key.TSName || field.TSType != key.TSType || field.TSOptional) {
+						return ObjectView{}, fmt.Errorf("detail key field %s must preserve the base JSON name and required TypeScript type", key.Name)
+					}
+				}
+			}
+			if !found {
+				return ObjectView{}, fmt.Errorf("detail.fields must include key field %s", key.Name)
+			}
+		}
+	}
+
 	if cfg.FrontendEnabled {
 		if err := validateFrontendIdentifiers(view); err != nil {
 			return ObjectView{}, err
@@ -461,6 +526,7 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 	view.HTTPImports = buildHTTPImports(view)
 	view.Frontend = buildFrontendView(spec, view)
 	view.CommonSchemas = commonSchemasForFields(view.FrontendFields)
+	view.DetailCommonSchemas = commonSchemasForFields(view.FrontendDetailFields)
 	view.ListCommonSchemas = commonSchemasForFields(view.FrontendListFields)
 	if err := validateFrontendView(view); err != nil {
 		return ObjectView{}, err

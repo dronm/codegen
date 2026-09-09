@@ -15,6 +15,7 @@ type ObjectSpec struct {
 	HumanName         string               `yaml:"humanName"`
 	HumanNamePlural   string               `yaml:"humanNamePlural"`
 	Table             TableSpec            `yaml:"table"`
+	Detail            *ListSpec            `yaml:"detail"`
 	List              *ListSpec            `yaml:"list"`
 	Route             string               `yaml:"route"`
 	PermissionPrefix  string               `yaml:"permissionPrefix"`
@@ -96,15 +97,17 @@ type FieldSpec struct {
 }
 
 type FrontendSpec struct {
-	Scaffold          bool                 `yaml:"scaffold"`
-	Title             string               `yaml:"title"`
-	TypeImports       []FrontendImportSpec `yaml:"typeImports"`
-	SchemaImports     []FrontendImportSpec `yaml:"schemaImports"`
-	ListTypeImports   []FrontendImportSpec `yaml:"listTypeImports"`
-	ListSchemaImports []FrontendImportSpec `yaml:"listSchemaImports"`
-	Form              FrontendFormSpec     `yaml:"form"`
-	List              FrontendListSpec     `yaml:"list"`
-	Routes            FrontendRoutesSpec   `yaml:"routes"`
+	Scaffold            bool                 `yaml:"scaffold"`
+	Title               string               `yaml:"title"`
+	TypeImports         []FrontendImportSpec `yaml:"typeImports"`
+	SchemaImports       []FrontendImportSpec `yaml:"schemaImports"`
+	DetailTypeImports   []FrontendImportSpec `yaml:"detailTypeImports"`
+	DetailSchemaImports []FrontendImportSpec `yaml:"detailSchemaImports"`
+	ListTypeImports     []FrontendImportSpec `yaml:"listTypeImports"`
+	ListSchemaImports   []FrontendImportSpec `yaml:"listSchemaImports"`
+	Form                FrontendFormSpec     `yaml:"form"`
+	List                FrontendListSpec     `yaml:"list"`
+	Routes              FrontendRoutesSpec   `yaml:"routes"`
 }
 
 type FrontendImportSpec struct {
@@ -435,6 +438,62 @@ func (s ObjectSpec) Validate() error {
 		}
 	}
 
+	if s.Detail != nil {
+		if strings.TrimSpace(s.Detail.Model) == "" {
+			return fmt.Errorf("detail.model is required")
+		}
+		if !token.IsIdentifier(PascalCase(s.Detail.Model)) {
+			return fmt.Errorf("detail.model %q does not produce a valid Go identifier", s.Detail.Model)
+		}
+		if PascalCase(s.Detail.Model) == PascalCase(s.Name) {
+			return fmt.Errorf("detail.model must differ from the base model name")
+		}
+		if PascalCase(s.Detail.Model) == PascalCase(s.Name)+"Key" ||
+			(s.CRUD.Update && PascalCase(s.Detail.Model) == "Update"+PascalCase(s.Name)+"Request") {
+			return fmt.Errorf("detail.model conflicts with a generated key or update request model")
+		}
+		if strings.TrimSpace(s.Detail.Table.Name) == "" {
+			return fmt.Errorf("detail.table.name is required")
+		}
+		if err := validateRelation(s.Detail.Table, "detail.table"); err != nil {
+			return err
+		}
+		if len(s.Detail.Fields) == 0 {
+			return fmt.Errorf("detail.fields must not be empty")
+		}
+		seen := make(map[string]struct{}, len(s.Detail.Fields))
+		seenGo := make(map[string]string, len(s.Detail.Fields))
+		seenJSON := make(map[string]string, len(s.Detail.Fields))
+		for _, field := range s.Detail.Fields {
+			if err := validateField(field); err != nil {
+				return fmt.Errorf("detail: %w", err)
+			}
+			if _, exists := seen[field.Name]; exists {
+				return fmt.Errorf("detail: duplicate field %s", field.Name)
+			}
+			goName := PascalCase(field.Name)
+			if previous, exists := seenGo[goName]; exists {
+				return fmt.Errorf("detail fields %s and %s generate the same Go field %s", previous, field.Name, goName)
+			}
+			if field.JSON == nil || *field.JSON {
+				jsonName := strings.TrimSpace(field.JSONName)
+				if jsonName == "" {
+					jsonName = field.Name
+				}
+				if previous, exists := seenJSON[jsonName]; exists {
+					return fmt.Errorf("detail fields %s and %s use the same JSON name %s", previous, field.Name, jsonName)
+				}
+				seenJSON[jsonName] = field.Name
+			}
+			seen[field.Name] = struct{}{}
+			seenGo[goName] = field.Name
+		}
+	}
+
+	if s.Detail != nil && s.List != nil && PascalCase(s.Detail.Model) == PascalCase(s.List.Model) {
+		return fmt.Errorf("detail.model must differ from list.model")
+	}
+
 	for _, index := range s.Migration.Indexes {
 		if strings.TrimSpace(index.Name) == "" {
 			return fmt.Errorf("migration index name is required")
@@ -579,6 +638,8 @@ func validateFrontendSpec(spec ObjectSpec, fields map[string]FieldSpec) error {
 	for _, imports := range [][]FrontendImportSpec{
 		frontend.TypeImports,
 		frontend.SchemaImports,
+		frontend.DetailTypeImports,
+		frontend.DetailSchemaImports,
 		frontend.ListTypeImports,
 		frontend.ListSchemaImports,
 	} {

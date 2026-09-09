@@ -867,7 +867,14 @@ func TestRenderFrontendScaffoldMigratesLegacyGeneratedVueFiles(t *testing.T) {
 			{Name: "id", Type: "int", PrimaryKey: true, AutoIncrement: true, ServerGenerated: true},
 			{Name: "name", Type: "string", Required: true},
 		},
-		CRUD:      CRUDSpec{Create: true, List: true, Detail: true, Update: true, Delete: true},
+		CRUD: CRUDSpec{Create: true, List: true, Detail: true, Update: true, Delete: true},
+		ApplicationRoute: ApplicationRouteSpec{
+			Enabled:     true,
+			Name:        "warehouseZones",
+			Path:        "/warehouse-zones",
+			Description: "Warehouse zones",
+			Section:     "Catalogues",
+		},
 		Frontend:  FrontendSpec{Scaffold: true},
 		Migration: MigrationSpec{Enabled: boolPointer(false)},
 	}
@@ -1974,13 +1981,15 @@ func TestRenderRegisterSupportsStringDimensionAndMultipleResources(t *testing.T)
 	}
 
 	generatedGo := readTestFile(t, filepath.Join(root, "internal", "registers", "accountTurnovers.gen.go"))
+	// gofmt aligns struct fields, so compare tokens without depending on spacing.
+	normalizedGo := strings.Join(strings.Fields(generatedGo), " ")
 	for _, expected := range []string{
 		"AccountCode string",
 		"Amount float64",
 		"Entries int64",
 		"action.Amount == 0 && action.Entries == 0",
 	} {
-		if !strings.Contains(generatedGo, expected) {
+		if !strings.Contains(normalizedGo, expected) {
 			t.Fatalf("multi-resource Go output missing %q\n%s", expected, generatedGo)
 		}
 	}

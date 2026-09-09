@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add independent YAML `detail` projections for Go detail services and models.
+- Generate detail TypeScript types, Valibot schemas, API converters, and matching
+  collection/edit-page detail types; preserve base mutation models.
+- Validate detail fields, keys, imports, and generated-name collisions.
+- Document configuration and add `examples/products_detail.yaml`.
+
+
+## Unreleased
+
 - added monthly accumulation-register schemas with typed dimensions and additive resources;
 - added the embedded, versioned register common-runtime repository and automatic bootstrap migration;
 - generated immutable action ledgers, monthly/current aggregates, balance, summary, and rebuild functions;

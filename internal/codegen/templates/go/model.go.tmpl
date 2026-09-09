@@ -55,6 +55,29 @@ func (m {{ .ListModelName }}) CollectionAgg() any {
 }
 {{- end }}
 
+{{- if .HasCustomDetail }}
+
+const {{ .Camel }}DetailRelation = {{ goQuote .DetailRelation }}
+
+// {{ .DetailComment }}
+type {{ .DetailModelName }} struct {
+{{- range .DetailFields }}
+{{- if .Comment }}
+	// {{ .Comment }}
+{{- end }}
+	{{ .Pascal }} {{ .GoType }} {{ .StructTag }}
+{{- end }}
+}
+
+func (m {{ .DetailModelName }}) Relation() string {
+	return {{ $.Camel }}DetailRelation
+}
+
+func (m {{ .DetailModelName }}) CollectionAgg() any {
+	return &wmodels.TotCount{TotCount: 0}
+}
+{{- end }}
+
 // {{ .Name }}Key is used for detail, update, and delete WHERE clauses.
 type {{ .Name }}Key struct {
 {{- range .Keys }}

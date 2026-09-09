@@ -11,7 +11,7 @@ import type { {{ .ListModelName }} } from "@/types/{{ .ListFileBase }}.gen";
 import type { {{ .Name }} } from "@/types/{{ .FileBase }}.gen";
 {{- end }}
 import type {
-{{- if .HasCustomList }}
+{{- if and .HasCustomList (not .HasCustomDetail) }}
 	{{ .Name }},
 {{- end }}
 	{{ .Name }}Key,
@@ -22,6 +22,10 @@ import type {
 	{{ .Name }}Upd,
 {{- end }}
 } from "@/types/{{ .FileBase }}.gen";
+
+{{- if .HasCustomDetail }}
+import type { {{ .DetailModelName }} } from "@/types/{{ .DetailFileBase }}.gen";
+{{- end }}
 
 type ListModel = {{ if .HasCustomList }}{{ .ListModelName }}{{ else }}{{ .Name }}{{ end }};
 type CreateModel = {{ if .CRUD.Create }}{{ .Name }}New{{ else }}never{{ end }};
@@ -78,7 +82,7 @@ export const {{ .Camel }}Collection = defineCollection<
 	{{ .Name }}Key,
 	CreateModel,
 	UpdateModel,
-	{{ .Name }}
+	{{ .DetailModelName }}
 >({
 	titleKey: "{{ .Name }}.title",
 	api: {{ .Camel }}Api,

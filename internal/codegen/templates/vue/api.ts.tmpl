@@ -15,9 +15,18 @@ import type {
 } from "@/types/{{ .ListFileBase }}.gen";
 import { {{ .ListCamel }}FromDTO } from "@/schemas/{{ .ListFileBase }}.gen";
 {{- end }}
+{{- if .HasCustomDetail }}
+import type {
+	{{ .DetailModelName }},
+	{{ .DetailModelName }}DTO,
+} from "@/types/{{ .DetailFileBase }}.gen";
+import { {{ .DetailCamel }}FromDTO } from "@/schemas/{{ .DetailFileBase }}.gen";
+{{- end }}
 import {
+{{- if or (not .HasCustomList) (not .HasCustomDetail) }}
 	type {{ .Name }},
 	type {{ .Name }}DTO,
+{{- end }}
 	type {{ .Name }}Key,
 {{- if .CRUD.Create }}
 	type {{ .Name }}New,
@@ -26,7 +35,9 @@ import {
 	type {{ .Name }}Upd,
 {{- end }}
 } from "@/types/{{ .FileBase }}.gen";
+{{- if or (not .HasCustomList) (not .HasCustomDetail) }}
 import { {{ .Camel }}FromDTO } from "@/schemas/{{ .FileBase }}.gen";
+{{- end }}
 
 const basePath = "{{ .Route }}";
 {{- if .CompositeKey }}
@@ -39,8 +50,8 @@ const detailPath = (key: {{ .Name }}Key): string => {
 const {{ .Camel }}CrudApi = createCrudApi<
 	{{ if .HasCustomList }}{{ .ListModelName }}{{ else }}{{ .Name }}{{ end }},
 	{{ if .HasCustomList }}{{ .ListModelName }}DTO{{ else }}{{ .Name }}DTO{{ end }},
-	{{ .Name }},
-	{{ .Name }}DTO,
+	{{ .DetailModelName }},
+	{{ .DetailModelName }}DTO,
 	{{ .Name }}Key,
 	{{ if .CRUD.Create }}{{ .Name }}New{{ else }}never{{ end }},
 	{{ if .CRUD.Update }}{{ .Name }}Upd{{ else }}never{{ end }}
@@ -51,7 +62,7 @@ const {{ .Camel }}CrudApi = createCrudApi<
 		return {{ frontendKeyValueExpression .FrontendKeys }};
 	},
 	fromListDTO: {{ if .HasCustomList }}{{ .ListCamel }}FromDTO{{ else }}{{ .Camel }}FromDTO{{ end }},
-	fromDetailDTO: {{ .Camel }}FromDTO,
+	fromDetailDTO: {{ .DetailCamel }}FromDTO,
 });
 
 export const {{ .Camel }}Api = {
@@ -60,10 +71,10 @@ export const {{ .Camel }}Api = {
 
 	detail: async (
 		key: {{ .Name }}Key,
-	): Promise<{{ .Name }}> => {
-		const response = await api.get<{{ .Name }}DTO>(detailPath(key));
+	): Promise<{{ .DetailModelName }}> => {
+		const response = await api.get<{{ .DetailModelName }}DTO>(detailPath(key));
 
-		return {{ .Camel }}FromDTO(response);
+		return {{ .DetailCamel }}FromDTO(response);
 	},
 {{- end }}
 {{- if and .CompositeKey .CRUD.Update }}

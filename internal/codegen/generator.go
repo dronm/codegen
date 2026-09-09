@@ -229,6 +229,12 @@ func validateObjectViews(objects []ObjectView) error {
 				[2]string{"generated file base", object.ListFileBase},
 			)
 		}
+		if object.HasCustomDetail {
+			checks = append(checks,
+				[2]string{"model name", object.DetailModelName},
+				[2]string{"generated file base", object.DetailFileBase},
+			)
+		}
 		if object.ApplicationRoute.Enabled {
 			checks = append(checks, [2]string{"application route", object.ApplicationRoute.Name})
 		}
@@ -342,6 +348,20 @@ func (r Renderer) RenderObject(model ObjectView) error {
 				RenderJob{
 					TemplatePath: filepath.Join(r.Config.TemplateDir, "vue", "listSchemas.ts.tmpl"),
 					TargetPath:   filepath.Join(r.Config.FrontendRoot, "src", "schemas", model.ListFileBase+".gen.ts"),
+					Format:       FormatNone,
+				},
+			)
+		}
+		if model.HasCustomDetail {
+			jobs = append(jobs,
+				RenderJob{
+					TemplatePath: filepath.Join(r.Config.TemplateDir, "vue", "detailTypes.ts.tmpl"),
+					TargetPath:   filepath.Join(r.Config.FrontendRoot, "src", "types", model.DetailFileBase+".gen.ts"),
+					Format:       FormatNone,
+				},
+				RenderJob{
+					TemplatePath: filepath.Join(r.Config.TemplateDir, "vue", "detailSchemas.ts.tmpl"),
+					TargetPath:   filepath.Join(r.Config.FrontendRoot, "src", "schemas", model.DetailFileBase+".gen.ts"),
 					Format:       FormatNone,
 				},
 			)
@@ -471,6 +491,12 @@ func (r Renderer) ensureNoManualFrontendCollision(model ObjectView) error {
 		paths = append(paths,
 			filepath.Join(r.Config.FrontendRoot, "src", "types", model.ListFileBase+".ts"),
 			filepath.Join(r.Config.FrontendRoot, "src", "schemas", model.ListFileBase+".ts"),
+		)
+	}
+	if model.HasCustomDetail {
+		paths = append(paths,
+			filepath.Join(r.Config.FrontendRoot, "src", "types", model.DetailFileBase+".ts"),
+			filepath.Join(r.Config.FrontendRoot, "src", "schemas", model.DetailFileBase+".ts"),
 		)
 	}
 

@@ -1,0 +1,46 @@
+# Create products_detail in your SQL migrations before using the Detail endpoint.
+name: Product
+humanName: product
+humanNamePlural: products
+table:
+  name: products
+route: /products
+keys:
+  - name: id
+    type: int
+fields:
+  - name: id
+    type: int
+    primaryKey: true
+    autoIncrement: true
+  - name: name
+    type: text
+    required: true
+  - name: measure_unit_id
+    type: int
+    nullable: true
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+# The base model remains the write model. List can have its own projection too.
+detail:
+  model: ProductDetail
+  table:
+    schema: public
+    name: products_detail
+  fields:
+    - name: id
+      type: int
+      primaryKey: true
+    - name: name
+      type: text
+      required: true
+    - name: measure_unit_id
+      type: int
+      nullable: true
+    - name: measure_unit
+      type: jsonb
+      nullable: true

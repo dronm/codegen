@@ -14,11 +14,17 @@ import {
 	type {{ .Name }}FormModel,
 } from "@/forms/{{ .FileBase }}.gen";
 import type {
+{{- if not .HasCustomDetail }}
 	{{ .Name }},
+{{- end }}
 	{{ .Name }}Key,
 	{{ .Name }}New,
 	{{ .Name }}Upd,
 } from "@/types/{{ .FileBase }}.gen";
+
+{{- if .HasCustomDetail }}
+import type { {{ .DetailModelName }} } from "@/types/{{ .DetailFileBase }}.gen";
+{{- end }}
 
 const { t } = useI18n();
 const schemas = use{{ .Name }}Schemas();
@@ -27,7 +33,7 @@ const edit = useCollectionEditPage<
 	{{ .Name }}Key,
 	{{ .Name }}New,
 	{{ .Name }}Upd,
-	{{ .Name }}
+	{{ .DetailModelName }}
 >({
 	api: {{ .Camel }}Api,
 	createRouteName: "{{ .Frontend.Routes.CreateName }}",

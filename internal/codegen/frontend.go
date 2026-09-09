@@ -23,12 +23,14 @@ var commonSchemaNames = []string{
 
 func buildFrontendView(spec ObjectSpec, object ObjectView) FrontendView {
 	frontend := FrontendView{
-		Scaffold:          spec.Frontend.Scaffold,
-		Title:             strings.TrimSpace(spec.Frontend.Title),
-		TypeImports:       buildFrontendImports(spec.Frontend.TypeImports),
-		SchemaImports:     buildFrontendImports(spec.Frontend.SchemaImports),
-		ListTypeImports:   buildFrontendImports(spec.Frontend.ListTypeImports),
-		ListSchemaImports: buildFrontendImports(spec.Frontend.ListSchemaImports),
+		Scaffold:            spec.Frontend.Scaffold,
+		Title:               strings.TrimSpace(spec.Frontend.Title),
+		TypeImports:         buildFrontendImports(spec.Frontend.TypeImports),
+		SchemaImports:       buildFrontendImports(spec.Frontend.SchemaImports),
+		DetailTypeImports:   buildFrontendImports(spec.Frontend.DetailTypeImports),
+		DetailSchemaImports: buildFrontendImports(spec.Frontend.DetailSchemaImports),
+		ListTypeImports:     buildFrontendImports(spec.Frontend.ListTypeImports),
+		ListSchemaImports:   buildFrontendImports(spec.Frontend.ListSchemaImports),
 	}
 	if frontend.Title == "" {
 		frontend.Title = strings.TrimSpace(object.ApplicationRoute.Description)
@@ -596,7 +598,7 @@ func isTypeScriptIdentifierPart(char rune) bool {
 
 func validateFrontendIdentifiers(object ObjectView) error {
 	seen := make(map[string]struct{})
-	for _, field := range append(append([]FieldView(nil), object.FrontendFields...), object.FrontendListFields...) {
+	for _, field := range append(append([]FieldView(nil), object.FrontendFields...), append(append([]FieldView(nil), object.FrontendListFields...), object.FrontendDetailFields...)...) {
 		if _, exists := seen[field.TSName]; exists {
 			continue
 		}
@@ -635,6 +637,18 @@ func isTypeScriptIdentifier(value string) bool {
 func validateFrontendView(object ObjectView) error {
 	if !object.Frontend.Scaffold {
 		return nil
+	}
+	if object.HasCustomDetail && object.Frontend.Form.Enabled {
+		detailFields := frontendFieldMap(object.FrontendDetailFields)
+		for _, base := range object.FrontendFields {
+			if !base.CreateField && !base.UpdateField && !base.PrimaryKey {
+				continue
+			}
+			field, ok := detailFields[base.TSName]
+			if !ok || field.TSType != base.TSType || field.TSOptional != base.TSOptional {
+				return fmt.Errorf("generated frontend form requires compatible detail field %s", base.TSName)
+			}
+		}
 	}
 	if object.Frontend.Form.Enabled && len(object.Frontend.Form.Fields) == 0 {
 		return fmt.Errorf("frontend form is enabled but no JSON-visible fields are available")
