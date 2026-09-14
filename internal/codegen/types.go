@@ -8,70 +8,74 @@ import (
 )
 
 type ObjectView struct {
-	SourceFile           string
-	Name                 string
-	Camel                string
-	Snake                string
-	SnakePlural          string
-	Kebab                string
-	Human                string
-	HumanPlural          string
-	Comment              string
-	FileBase             string
-	TableSchema          string
-	TableName            string
-	TableComment         string
-	Relation             string
-	ListModelName        string
-	ListCamel            string
-	ListFileBase         string
-	ListRelation         string
-	ListComment          string
-	HasCustomList        bool
-	DetailModelName      string
-	DetailCamel          string
-	DetailFileBase       string
-	DetailRelation       string
-	DetailComment        string
-	HasCustomDetail      bool
-	Route                string
-	ItemRoute            string
-	PermissionPrefix     string
-	ServiceName          string
-	SessionRequired      bool
-	CRUDNotifications    bool
-	PermissionsEnabled   bool
-	GoModule             string
-	NeedsTimeImport      bool
-	NeedsModelbindImport bool
-	CompositeKey         bool
-	Keys                 []KeyView
-	Fields               []FieldView
-	DetailFields         []FieldView
-	ListFields           []FieldView
-	CreateFields         []FieldView
-	UpdateFields         []FieldView
-	FrontendFields       []FieldView
-	FrontendDetailFields []FieldView
-	FrontendListFields   []FieldView
-	FrontendCreateFields []FieldView
-	FrontendUpdateFields []FieldView
-	FrontendKeys         []KeyView
-	Frontend             FrontendView
-	CommonSchemas        []string
-	DetailCommonSchemas  []string
-	ListCommonSchemas    []string
-	CRUD                 CRUDSpec
-	GeneratedServiceCRUD CRUDSpec
-	ManualServiceCRUD    CRUDSpec
-	PermissionRows       []PermissionView
-	GrantRoles           []string
-	ApplicationRoute     ApplicationRouteView
-	Menu                 MenuView
-	Migration            MigrationView
-	Test                 TestView
-	ServiceImports       ServiceImportView
-	HTTPImports          HTTPImportView
+	SourceFile             string
+	Name                   string
+	Camel                  string
+	Snake                  string
+	SnakePlural            string
+	Kebab                  string
+	Human                  string
+	HumanPlural            string
+	Comment                string
+	FileBase               string
+	TableSchema            string
+	TableName              string
+	TableComment           string
+	Relation               string
+	ListModelName          string
+	ListCamel              string
+	ListFileBase           string
+	ListRelation           string
+	ListComment            string
+	HasCustomList          bool
+	DetailModelName        string
+	DetailCamel            string
+	DetailFileBase         string
+	DetailRelation         string
+	DetailComment          string
+	HasCustomDetail        bool
+	Route                  string
+	ItemRoute              string
+	PermissionPrefix       string
+	ServiceName            string
+	SessionRequired        bool
+	CRUDNotifications      bool
+	PermissionsEnabled     bool
+	GoModule               string
+	NeedsTimeImport        bool
+	NeedsModelbindImport   bool
+	CompositeKey           bool
+	Keys                   []KeyView
+	Fields                 []FieldView
+	DetailFields           []FieldView
+	ListFields             []FieldView
+	CreateFields           []FieldView
+	UpdateFields           []FieldView
+	FrontendFields         []FieldView
+	FrontendDetailFields   []FieldView
+	FrontendListFields     []FieldView
+	FrontendCreateFields   []FieldView
+	FrontendUpdateFields   []FieldView
+	FrontendKeys           []KeyView
+	Frontend               FrontendView
+	CommonSchemas          []string
+	DetailCommonSchemas    []string
+	ListCommonSchemas      []string
+	CRUD                   CRUDSpec
+	GeneratedServiceCRUD   CRUDSpec
+	ManualServiceCRUD      CRUDSpec
+	HTTPRoutesEnabled      bool
+	GeneratedHTTPCRUD      CRUDSpec
+	ManualHTTPCRUD         CRUDSpec
+	HasGeneratedHTTPRoutes bool
+	PermissionRows         []PermissionView
+	GrantRoles             []string
+	ApplicationRoute       ApplicationRouteView
+	Menu                   MenuView
+	Migration              MigrationView
+	Test                   TestView
+	ServiceImports         ServiceImportView
+	HTTPImports            HTTPImportView
 }
 
 type KeyView struct {
@@ -364,10 +368,16 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 		PermissionsEnabled: boolOrDefault(spec.Permissions.Enabled, true),
 		CRUD:               spec.CRUD,
 		ManualServiceCRUD:  manualServiceCRUD(spec.Service.ManualMethods),
+		HTTPRoutesEnabled:  boolOrDefault(spec.HTTPRoutes.Enabled, true),
+		ManualHTTPCRUD:     manualHTTPCRUD(spec.HTTPRoutes.ManualMethods),
 		GoModule:           cfg.GoModule,
 		CompositeKey:       len(spec.Keys) > 1,
 	}
-	view.GeneratedServiceCRUD = generatedServiceCRUD(view.CRUD, view.ManualServiceCRUD)
+	view.GeneratedServiceCRUD = generatedCRUD(view.CRUD, view.ManualServiceCRUD)
+	if view.HTTPRoutesEnabled {
+		view.GeneratedHTTPCRUD = generatedCRUD(view.CRUD, view.ManualHTTPCRUD)
+	}
+	view.HasGeneratedHTTPRoutes = hasCRUD(view.GeneratedHTTPCRUD)
 
 	fieldSpecs := make(map[string]FieldSpec, len(spec.Fields))
 	primaryKeyCount := 0
@@ -1223,7 +1233,7 @@ func buildServiceImports(view ObjectView) ServiceImportView {
 	}
 }
 
-func generatedServiceCRUD(crud CRUDSpec, manual CRUDSpec) CRUDSpec {
+func generatedCRUD(crud CRUDSpec, manual CRUDSpec) CRUDSpec {
 	return CRUDSpec{
 		Create: crud.Create && !manual.Create,
 		List:   crud.List && !manual.List,
@@ -1233,8 +1243,13 @@ func generatedServiceCRUD(crud CRUDSpec, manual CRUDSpec) CRUDSpec {
 	}
 }
 
+func hasCRUD(crud CRUDSpec) bool {
+	return crud.Create || crud.List || crud.Detail || crud.Update || crud.Delete
+}
+
 func buildHTTPImports(view ObjectView) HTTPImportView {
-	compositeUsesBinder := view.CompositeKey && (view.CRUD.Detail || view.CRUD.Update || view.CRUD.Delete)
+	crud := view.GeneratedHTTPCRUD
+	compositeUsesBinder := view.CompositeKey && (crud.Detail || crud.Update || crud.Delete)
 	hasNumericCompositeKey := false
 	for _, key := range view.Keys {
 		if key.IsNumeric {
@@ -1243,11 +1258,11 @@ func buildHTTPImports(view ObjectView) HTTPImportView {
 	}
 	return HTTPImportView{
 		Fmt:       compositeUsesBinder,
-		HTTP:      view.CRUD.Create || compositeUsesBinder,
+		HTTP:      crud.Create || compositeUsesBinder,
 		Strconv:   compositeUsesBinder && hasNumericCompositeKey,
-		Modelbind: view.CompositeKey && view.CRUD.Update,
-		Models:    view.CRUD.Create || view.CRUD.Update || (view.CompositeKey && (view.CRUD.Detail || view.CRUD.Delete)),
-		Webapp:    true,
+		Modelbind: view.CompositeKey && crud.Update,
+		Models:    crud.Create || crud.Update || (view.CompositeKey && (crud.Detail || crud.Delete)),
+		Webapp:    view.HasGeneratedHTTPRoutes,
 	}
 }
 

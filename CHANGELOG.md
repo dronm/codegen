@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add independent `httpRoutes.enabled` and `httpRoutes.manualMethods` ownership
+  for generated backend endpoints and binders.
+- Derive route registration, helper imports, and manual-collision checks from the
+  routes that remain generator-owned while preserving CRUD services,
+  permissions, tests, and frontend contracts.
 - Add independent YAML `detail` projections for Go detail services and models.
 - Generate detail TypeScript types, Valibot schemas, API converters, and matching
   collection/edit-page detail types; preserve base mutation models.

@@ -180,7 +180,32 @@ service:
     - update
 ```
 
-Codegen continues to generate the service type, constructor, registration, HTTP routes and binders, permissions, models, and frontend contract. It omits only the selected Go methods. Implement them on the generated service type in an explicitly named extension such as `internal/services/materialReceipt_custom.go`. Generation validates that every configured manual method exists in a hand-written Go file, and rejects a hand-written CRUD method that still has generated ownership.
+By itself, `service.manualMethods` changes only service-method ownership. Codegen continues to generate the service type, constructor, registration, HTTP routes and binders, permissions, models, and frontend contract. It omits only the selected Go methods. Implement them on the generated service type in an explicitly named extension such as `internal/services/materialReceipt_custom.go`. Generation validates that every configured manual method exists in a hand-written Go file, and rejects a hand-written CRUD method that still has generated ownership.
+
+HTTP route ownership is configured independently. Keep an operation enabled under `crud`, then list it under `httpRoutes.manualMethods` when the application supplies its route and binder:
+
+```yaml
+service:
+  manualMethods:
+    - create
+    - detail
+    - update
+
+httpRoutes:
+  manualMethods:
+    - create
+    - detail
+    - update
+```
+
+The two lists may overlap, as they commonly do for transactional aggregate documents, but neither implies the other. Omitting `httpRoutes` preserves the existing behavior and generates routes for every enabled CRUD operation. Set `httpRoutes.enabled: false` when no generic HTTP routes should be generated for an object, such as aggregate line items:
+
+```yaml
+httpRoutes:
+  enabled: false
+```
+
+`httpRoutes.manualMethods` accepts `create`, `list`, `detail`, `update`, and `delete`; each selected operation must also be enabled under `crud`. Do not combine `manualMethods` with `enabled: false`. Route ownership does not disable CRUD services, permissions, models, API integration tests, or frontend types, schemas, APIs, and forms. The generated route registry includes an object only when at least one route remains generator-owned. Register application-owned routes separately from the permanent `registerGeneratedRoutes` integration point. Because application routes may use custom verbs, paths, or helper registrars, Codegen treats `manualMethods` as an ownership declaration and does not require a matching literal route to be discoverable in hand-written code.
 
 When upgrading from the older `.gen.vue` ownership model, `generate` migrates a legacy `*Form.gen.vue`, `*List.gen.vue`, or `*EditPage.gen.vue` to the corresponding name without `.gen` when the manual target does not already exist, preserving any customizations. If both legacy and manual files exist, generation stops instead of deleting either file; keep the manual file and remove or archive the legacy one explicitly.
 

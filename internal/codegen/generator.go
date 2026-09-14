@@ -546,13 +546,19 @@ func (r Renderer) ensureNoManualBackendCollision(model ObjectView) error {
 }
 
 func (r Renderer) RenderRoutes(objects []ObjectView) error {
+	httpObjects := make([]ObjectView, 0, len(objects))
+	for _, object := range objects {
+		if object.HasGeneratedHTTPRoutes {
+			httpObjects = append(httpObjects, object)
+		}
+	}
 	job := RenderJob{
 		TemplatePath: filepath.Join(r.Config.TemplateDir, "go", "routes_gen.go.tmpl"),
 		TargetPath:   filepath.Join(r.Config.ServerRoot, "internal", "httpapi", "routes_gen.go"),
 		Format:       FormatGo,
 	}
 
-	return r.renderFile(job, RoutesView{Objects: objects})
+	return r.renderFile(job, RoutesView{Objects: httpObjects})
 }
 
 func (r Renderer) RenderServices(objects []ObjectView) error {

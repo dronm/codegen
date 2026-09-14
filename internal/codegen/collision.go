@@ -168,9 +168,9 @@ func validateManualBackendCollisions(serverRoot string, objects []ObjectView) er
 		addConflict("registered service name", object.ServiceName, symbols.ServiceNames[object.ServiceName], object)
 
 		serviceMethods := []struct {
-			Name      string
-			Enabled   bool
-			Manual    bool
+			Name    string
+			Enabled bool
+			Manual  bool
 		}{
 			{Name: "Create", Enabled: object.CRUD.Create, Manual: object.ManualServiceCRUD.Create},
 			{Name: "List", Enabled: object.CRUD.List, Manual: object.ManualServiceCRUD.List},
@@ -197,11 +197,14 @@ func validateManualBackendCollisions(serverRoot string, objects []ObjectView) er
 			addConflict("service method", methodName, source, object)
 		}
 
-		httpSymbols := []string{object.Camel + "Routes"}
-		if object.CompositeKey && (object.CRUD.Detail || object.CRUD.Update || object.CRUD.Delete) {
+		httpSymbols := make([]string, 0, 4)
+		if object.HasGeneratedHTTPRoutes {
+			httpSymbols = append(httpSymbols, object.Camel+"Routes")
+		}
+		if object.CompositeKey && (object.GeneratedHTTPCRUD.Detail || object.GeneratedHTTPCRUD.Update || object.GeneratedHTTPCRUD.Delete) {
 			httpSymbols = append(httpSymbols, object.Camel+"KeyBinder", object.Camel+"KeyFromRequest")
 		}
-		if object.CompositeKey && object.CRUD.Update {
+		if object.CompositeKey && object.GeneratedHTTPCRUD.Update {
 			httpSymbols = append(httpSymbols, object.Camel+"UpdateBinder")
 		}
 		for _, name := range httpSymbols {
@@ -231,19 +234,19 @@ func validateManualBackendCollisions(serverRoot string, objects []ObjectView) er
 
 func generatedActionCodes(object ObjectView) []string {
 	actions := make([]string, 0, 5)
-	if object.CRUD.Create {
+	if object.GeneratedHTTPCRUD.Create {
 		actions = append(actions, "create")
 	}
-	if object.CRUD.List {
+	if object.GeneratedHTTPCRUD.List {
 		actions = append(actions, "list")
 	}
-	if object.CRUD.Detail {
+	if object.GeneratedHTTPCRUD.Detail {
 		actions = append(actions, "detail")
 	}
-	if object.CRUD.Update {
+	if object.GeneratedHTTPCRUD.Update {
 		actions = append(actions, "update")
 	}
-	if object.CRUD.Delete {
+	if object.GeneratedHTTPCRUD.Delete {
 		actions = append(actions, "delete")
 	}
 
@@ -256,19 +259,19 @@ func generatedActionCodes(object ObjectView) []string {
 
 func generatedHTTPRoutes(object ObjectView) []string {
 	routes := make([]string, 0, 5)
-	if object.CRUD.Create {
+	if object.GeneratedHTTPCRUD.Create {
 		routes = append(routes, "POST "+object.Route)
 	}
-	if object.CRUD.List {
+	if object.GeneratedHTTPCRUD.List {
 		routes = append(routes, "GET "+object.Route)
 	}
-	if object.CRUD.Detail {
+	if object.GeneratedHTTPCRUD.Detail {
 		routes = append(routes, "GET "+object.ItemRoute)
 	}
-	if object.CRUD.Update {
+	if object.GeneratedHTTPCRUD.Update {
 		routes = append(routes, "PATCH "+object.ItemRoute)
 	}
-	if object.CRUD.Delete {
+	if object.GeneratedHTTPCRUD.Delete {
 		routes = append(routes, "DELETE "+object.ItemRoute)
 	}
 	return routes

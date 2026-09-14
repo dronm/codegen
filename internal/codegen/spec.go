@@ -21,6 +21,7 @@ type ObjectSpec struct {
 	PermissionPrefix  string               `yaml:"permissionPrefix"`
 	ServiceName       string               `yaml:"serviceName"`
 	Service           ServiceSpec          `yaml:"service"`
+	HTTPRoutes        HTTPRoutesSpec       `yaml:"httpRoutes"`
 	SessionRequired   *bool                `yaml:"sessionRequired"`
 	CRUDNotifications *bool                `yaml:"crudNotifications"`
 	Keys              []KeySpec            `yaml:"keys"`
@@ -264,6 +265,11 @@ type ServiceSpec struct {
 	ManualMethods []string `yaml:"manualMethods"`
 }
 
+type HTTPRoutesSpec struct {
+	Enabled       *bool    `yaml:"enabled"`
+	ManualMethods []string `yaml:"manualMethods"`
+}
+
 type TestSpec struct {
 	Enabled           bool           `yaml:"enabled"`
 	CreateBody        map[string]any `yaml:"createBody"`
@@ -307,6 +313,12 @@ func (s ObjectSpec) Validate() error {
 		return fmt.Errorf("at least one CRUD operation is required")
 	}
 	if err := validateManualServiceMethods(s.Service.ManualMethods, s.CRUD); err != nil {
+		return err
+	}
+	if s.HTTPRoutes.Enabled != nil && !*s.HTTPRoutes.Enabled && len(s.HTTPRoutes.ManualMethods) > 0 {
+		return fmt.Errorf("httpRoutes.manualMethods cannot be set when httpRoutes.enabled is false")
+	}
+	if err := validateManualHTTPMethods(s.HTTPRoutes.ManualMethods, s.CRUD); err != nil {
 		return err
 	}
 
@@ -577,6 +589,14 @@ func (s ObjectSpec) Validate() error {
 }
 
 func validateManualServiceMethods(methods []string, crud CRUDSpec) error {
+	return validateManualCRUDMethods("service.manualMethods", methods, crud)
+}
+
+func validateManualHTTPMethods(methods []string, crud CRUDSpec) error {
+	return validateManualCRUDMethods("httpRoutes.manualMethods", methods, crud)
+}
+
+func validateManualCRUDMethods(fieldPath string, methods []string, crud CRUDSpec) error {
 	enabled := map[string]bool{
 		"create": crud.Create,
 		"list":   crud.List,
@@ -588,13 +608,13 @@ func validateManualServiceMethods(methods []string, crud CRUDSpec) error {
 	for _, rawMethod := range methods {
 		method := strings.ToLower(strings.TrimSpace(rawMethod))
 		if _, supported := enabled[method]; !supported {
-			return fmt.Errorf("service.manualMethods contains unsupported method %q", rawMethod)
+			return fmt.Errorf("%s contains unsupported method %q", fieldPath, rawMethod)
 		}
 		if _, duplicate := seen[method]; duplicate {
-			return fmt.Errorf("service.manualMethods contains duplicate method %q", method)
+			return fmt.Errorf("%s contains duplicate method %q", fieldPath, method)
 		}
 		if !enabled[method] {
-			return fmt.Errorf("service.manualMethods method %q requires crud.%s: true", method, method)
+			return fmt.Errorf("%s method %q requires crud.%s: true", fieldPath, method, method)
 		}
 		seen[method] = struct{}{}
 	}
@@ -603,6 +623,14 @@ func validateManualServiceMethods(methods []string, crud CRUDSpec) error {
 }
 
 func manualServiceCRUD(methods []string) CRUDSpec {
+	return manualCRUD(methods)
+}
+
+func manualHTTPCRUD(methods []string) CRUDSpec {
+	return manualCRUD(methods)
+}
+
+func manualCRUD(methods []string) CRUDSpec {
 	result := CRUDSpec{}
 	for _, rawMethod := range methods {
 		switch strings.ToLower(strings.TrimSpace(rawMethod)) {

@@ -105,9 +105,43 @@ service:
     - update
 ```
 
-This setting changes only service-method ownership. The service type, constructor, registration, HTTP routes and binders, permission rows, API types, and frontend contracts remain generated from `crud`. Codegen omits `Create` and `Update` from `internal/services/<object>.gen.go`; implement both methods on the generated service type in `internal/services/<object>_custom.go` using the signatures expected by the generated routes.
+By itself, this setting changes only service-method ownership. The service type, constructor, registration, HTTP routes and binders, permission rows, API types, and frontend contracts remain generated from `crud`. Codegen omits `Create` and `Update` from `internal/services/<object>.gen.go`; implement both methods on the generated service type in `internal/services/<object>_custom.go` using the signatures expected by the generated or application-owned routes.
 
 Supported manual method names are `create`, `list`, `detail`, `update`, and `delete`. Each selected method must also be enabled under `crud`. Before generation, Codegen scans hand-written service files, requires each manually owned receiver method to exist, and rejects receiver methods that collide with methods which are still generator-owned. Generated `.gen.go`, `_gen.go`, and test files do not satisfy manual ownership.
+
+HTTP route ownership is independent from service ownership. Keep each operation in the public CRUD contract, then list the endpoints implemented by the application under `httpRoutes.manualMethods`:
+
+```yaml
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+service:
+  manualMethods:
+    - create
+    - detail
+    - update
+
+httpRoutes:
+  manualMethods:
+    - create
+    - detail
+    - update
+```
+
+This aggregate-document example leaves collection `GET` and item `DELETE` routes generator-owned while the application owns `POST`, item `GET`, and `PATCH`. `service.manualMethods` controls Go method bodies; `httpRoutes.manualMethods` controls endpoint and binder generation. Either list can be used without the other.
+
+Set `httpRoutes.enabled: false` when an object should have no generic generated endpoints:
+
+```yaml
+httpRoutes:
+  enabled: false
+```
+
+This is useful for aggregate line models that must only be accessed through their document service. The default is `true`, so omitting `httpRoutes` preserves the previous behavior. Supported `manualMethods` values are `create`, `list`, `detail`, `update`, and `delete`, and each must also be enabled under `crud`. Combining `manualMethods` with `enabled: false` is invalid. Disabling or manually owning generated routes does not change service generation, permission rows, models, API integration tests, or frontend types, schemas, APIs, and forms; those remain driven by `crud`. The generated route registry calls an object's route function only when at least one endpoint remains generator-owned. Application-owned routes must be registered by the application's hand-written route setup. Because an application route may use custom verbs, paths, binders, or helper registrars, `manualMethods` is an ownership declaration; Codegen does not require an exact replacement route to be discoverable in hand-written code.
 
 By default, generation refuses to run when any of these manual files already exists:
 
@@ -119,7 +153,7 @@ internal/httpapi/<object>.go
 
 This prevents duplicate model, service, and route declarations. `CODEGEN_ALLOW_MANUAL_COLLISIONS=true` disables the guard and should only be used during a deliberate ownership migration.
 
-The guard is not limited to matching filenames. Before writing backend output, the generator parses hand-written Go files and rejects collisions with:
+The guard is not limited to matching filenames. Before writing backend output, the generator parses hand-written Go files and rejects collisions with generator-owned declarations and registrations:
 
 - model, key, list-projection, and update-request type names;
 - service types, constructors, registration functions, and `MustRegisterService` names;
@@ -127,6 +161,8 @@ The guard is not limited to matching filenames. Before writing backend output, t
 - HTTP method/path pairs;
 - `WithName` route names;
 - `WithPermission` permission names.
+
+An HTTP method/path, `WithName`, or `WithPermission` registration is allowed when its operation is listed under `httpRoutes.manualMethods` or all generated HTTP routes are disabled. Operations that remain generator-owned are still protected from duplicate registration. Use a distinct name for a hand-written route-registration function so that it does not collide with the generated `<object>Routes` function.
 
 Generated `.gen.go` files are excluded from this manual-symbol scan.
 
@@ -219,6 +255,8 @@ GET    /objects/{id}  <prefix>.detail
 PATCH  /objects/{id}  <prefix>.update
 DELETE /objects/{id}  <prefix>.delete
 ```
+
+All routes for CRUD operations are generated by default. `httpRoutes.manualMethods` removes selected operations from generated HTTP ownership, while `httpRoutes.enabled: false` removes all of them. These settings affect backend route and binder generation only; the CRUD contract and its services, permissions, tests, and frontend artifacts remain available. When no generated endpoints remain, `internal/httpapi/routes_gen.go` omits the object's registration call.
 
 Each route receives:
 
@@ -387,6 +425,7 @@ crud:
 | `permissionPrefix` | Permission and route-name prefix; defaults to lower camel model name. |
 | `serviceName` | Registered webapp service name; defaults to model name. |
 | `service.manualMethods` | Enabled CRUD service methods whose Go implementations are hand-written. |
+| `httpRoutes` | Generated backend route ownership. `enabled` defaults to true; `manualMethods` transfers selected enabled CRUD endpoints to application code. |
 | `sessionRequired` | Require an authenticated session; defaults to true. |
 | `crudNotifications` | Enable webapp CRUD notifications; defaults to true. |
 | `keys` | Ordered API/database key fields. |
