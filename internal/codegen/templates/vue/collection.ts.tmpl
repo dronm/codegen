@@ -29,7 +29,7 @@ import type { {{ .DetailModelName }} } from "@/types/{{ .DetailFileBase }}.gen";
 
 type ListModel = {{ if .HasCustomList }}{{ .ListModelName }}{{ else }}{{ .Name }}{{ end }};
 type CreateModel = {{ if .CRUD.Create }}{{ .Name }}New{{ else }}never{{ end }};
-type UpdateModel = {{ if .CRUD.Update }}{{ .Name }}Upd{{ else }}Record<string, never>{{ end }};
+type UpdateModel = {{ if .CRUD.Update }}{{ .Name }}Upd{{ else }}never{{ end }};
 
 {{- if .Frontend.List.CanInlineCreate }}
 const createRow = (): ListModel => ({

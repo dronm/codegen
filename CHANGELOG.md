@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Generate `never` update models for read-only frontend collections so their
+  types match the generated CRUD API contract.
 - Add independent `httpRoutes.enabled` and `httpRoutes.manualMethods` ownership
   for generated backend endpoints and binders.
 - Derive route registration, helper imports, and manual-collision checks from the

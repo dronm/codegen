@@ -1215,7 +1215,7 @@ func TestRenderEmptyFrontendRouteRegistryHasNoUnusedHelper(t *testing.T) {
 	}
 }
 
-func TestFrontendReadOnlyAPIUsesNeverMutationModels(t *testing.T) {
+func TestFrontendReadOnlyAPIAndCollectionUseNeverMutationModels(t *testing.T) {
 	t.Parallel()
 
 	cfg := testConfig(t)
@@ -1235,7 +1235,23 @@ func TestFrontendReadOnlyAPIUsesNeverMutationModels(t *testing.T) {
 			{Name: "id", Type: "int", PrimaryKey: true, ServerGenerated: true},
 			{Name: "message", Type: "text", Required: true},
 		},
-		CRUD:      CRUDSpec{List: true, Detail: true},
+		CRUD: CRUDSpec{List: true, Detail: true},
+		ApplicationRoute: ApplicationRouteSpec{
+			Enabled:     true,
+			Name:        "auditEntries",
+			Path:        "/audit-entries",
+			Description: "Audit entries",
+			Section:     "Service",
+		},
+		Frontend: FrontendSpec{
+			Scaffold: true,
+			List: FrontendListSpec{
+				Columns: []FrontendListColumnSpec{
+					{Field: "id"},
+					{Field: "message"},
+				},
+			},
+		},
 		Migration: MigrationSpec{Enabled: boolPointer(false)},
 	}
 
@@ -1249,6 +1265,16 @@ func TestFrontendReadOnlyAPIUsesNeverMutationModels(t *testing.T) {
 	api := readTestFile(t, filepath.Join(cfg.FrontendRoot, "src/api/auditEntry.gen.ts"))
 	if !strings.Contains(api, "\tnever,\n\tnever\n>(") {
 		t.Fatalf("read-only API did not use never mutation models\n%s", api)
+	}
+
+	collection := readTestFile(t, filepath.Join(cfg.FrontendRoot, "src/collections/auditEntry.gen.ts"))
+	for _, expected := range []string{
+		"type CreateModel = never;",
+		"type UpdateModel = never;",
+	} {
+		if !strings.Contains(collection, expected) {
+			t.Fatalf("read-only collection missing %q\n%s", expected, collection)
+		}
 	}
 }
 
