@@ -268,6 +268,7 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 		}
 	}
 
+	referenceImports := make(map[string]string)
 	for _, columnSpec := range columnSpecs {
 		field, exists := fieldByName[columnSpec.Field]
 		if !exists {
@@ -286,25 +287,60 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 		if strings.TrimSpace(columnSpec.DataType) != "" {
 			dataType = strings.TrimSpace(columnSpec.DataType)
 		}
+		referenceName := ""
+		referenceField := ""
+		if columnSpec.Reference != nil {
+			referenceName = strings.TrimSpace(columnSpec.Reference.Name)
+			referenceField = strings.TrimSpace(columnSpec.Reference.Field)
+			referenceImports[referenceName] = strings.TrimSpace(columnSpec.Reference.Import)
+			dataType = "reference"
+			align = ""
+		}
 		if strings.TrimSpace(columnSpec.Align) != "" {
 			align = strings.TrimSpace(columnSpec.Align)
 		}
 		width := strings.TrimSpace(columnSpec.Width)
 		if width == "" {
-			width = frontendColumnWidth(field)
+			if columnSpec.Reference != nil {
+				width = "16rem"
+			} else {
+				width = frontendColumnWidth(field)
+			}
 		}
 		view.Columns = append(view.Columns, FrontendListColumnView{
-			Field:    field,
-			Label:    frontendFieldLabel(columnSpec.Label, field),
-			Width:    width,
-			Sortable: sortable,
-			Editable: editable,
-			DataType: dataType,
-			Align:    align,
-			Format:   format,
+			Field:          field,
+			Label:          frontendFieldLabel(columnSpec.Label, field),
+			Width:          width,
+			Sortable:       sortable,
+			SortField:      strings.TrimSpace(columnSpec.SortField),
+			Editable:       editable,
+			DataType:       dataType,
+			Align:          align,
+			Format:         format,
+			ReferenceName:  referenceName,
+			ReferenceField: referenceField,
 		})
 		if format == "formatDate" {
 			view.NeedsFormatDate = true
+		}
+	}
+	if len(referenceImports) > 0 {
+		namesByImport := make(map[string][]string)
+		for name, from := range referenceImports {
+			namesByImport[from] = append(namesByImport[from], name)
+		}
+		imports := make([]string, 0, len(namesByImport))
+		for from := range namesByImport {
+			imports = append(imports, from)
+		}
+		sort.Strings(imports)
+		for _, from := range imports {
+			names := namesByImport[from]
+			sort.Strings(names)
+			view.ReferenceImports = append(view.ReferenceImports, FrontendListReferenceImportView{
+				From:  from,
+				Names: names,
+			})
 		}
 	}
 	if view.CanInlineCreate {
@@ -332,7 +368,7 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 
 func supportsGeneratedInlineEditor(field FieldView) bool {
 	switch field.Type {
-	case "string", "text", "enum", "password", "time", "int", "bigint", "float", "numeric", "bool":
+	case "string", "text", "enum", "password", "time", "int", "bigint", "float", "numeric", "bool", "date", "datetime", "timestamptz":
 		return true
 	default:
 		return false

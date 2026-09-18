@@ -900,9 +900,10 @@ For inline mode Codegen generates:
 
 Supported generated inline editors are currently:
 
-- string/text/enum/password/time → `InputText`;
-- int/bigint/float/numeric → `InputNumber`;
-- bool → `Checkbox`.
+- string/text/enum/password/time → text editor;
+- int/bigint/float/numeric → numeric editor;
+- bool → checkbox editor;
+- date/datetime/timestamptz → date editor through `dataType: "date"`.
 
 Writable scalar fields are editable by default in inline mode. Override an individual column when needed:
 
@@ -915,7 +916,42 @@ frontend:
         editable: false
 ```
 
-`json`, `jsonb`, and date/datetime fields are not made editable automatically because the reusable grid requires a custom editor for those values. They may still participate in inline creation when they are nullable or have a schema default. For example, a nullable `ref_1c jsonb` field is initialized to `null` and included in the typed create model without exposing an incorrect text editor.
+`json` and `jsonb` fields are not made editable automatically because the reusable grid requires a domain-specific editor for those values. They may still participate in inline creation when they are nullable or have a schema default. For example, a nullable `ref_1c jsonb` field is initialized to `null` and included in the typed create model without exposing an incorrect text editor.
+
+Reference-backed inline columns can declare the reusable reference configuration directly in YAML:
+
+```yaml
+frontend:
+  list:
+    editMode: inline
+    columns:
+      - field: material_id
+        label: Материал
+        editable: true
+        reference:
+          name: materialReference
+          import: "@/references/inventoryReferences"
+          field: material
+        sortField: "material->>'descr'"
+```
+
+This generates the named import and column metadata equivalent to:
+
+```ts
+import { materialReference } from "@/references/inventoryReferences";
+
+{
+	field: "material_id",
+	headerKey: "MaterialStatus.fields.material_id",
+	sortField: "material->>'descr'",
+	editable: true,
+	dataType: "reference",
+	reference: materialReference,
+	referenceField: "material",
+}
+```
+
+`reference.name` is the imported TypeScript symbol, `reference.import` is its module path, and `reference.field` is the list-model field that carries the descriptive reference value. Declaring `reference` implies `dataType: "reference"`; an explicitly conflicting `dataType` is rejected. `sortField` is passed through verbatim to the generated grid column so projected/reference descriptions can use the server-side sort expression expected by the collection endpoint. Multiple reference symbols from the same module are grouped into one generated import.
 
 If a writable create field has neither an inline editor nor a safe default (`nullable: true` or `default:`), validation fails rather than generating an inline create flow that cannot produce a valid create model.
 

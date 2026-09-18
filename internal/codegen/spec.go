@@ -146,13 +146,21 @@ type FrontendListSpec struct {
 }
 
 type FrontendListColumnSpec struct {
-	Field    string `yaml:"field"`
-	Label    string `yaml:"label"`
-	Width    string `yaml:"width"`
-	Sortable *bool  `yaml:"sortable"`
-	Editable *bool  `yaml:"editable"`
-	DataType string `yaml:"dataType"`
-	Align    string `yaml:"align"`
+	Field     string                     `yaml:"field"`
+	Label     string                     `yaml:"label"`
+	Width     string                     `yaml:"width"`
+	Sortable  *bool                      `yaml:"sortable"`
+	SortField string                     `yaml:"sortField"`
+	Editable  *bool                      `yaml:"editable"`
+	DataType  string                     `yaml:"dataType"`
+	Align     string                     `yaml:"align"`
+	Reference *FrontendListReferenceSpec `yaml:"reference"`
+}
+
+type FrontendListReferenceSpec struct {
+	Name   string `yaml:"name"`
+	Import string `yaml:"import"`
+	Field  string `yaml:"field"`
 }
 
 type FrontendRoutesSpec struct {
@@ -742,6 +750,7 @@ func validateFrontendSpec(spec ObjectSpec, fields map[string]FieldSpec) error {
 		frontendListNames[jsonName] = struct{}{}
 	}
 	seenColumns := make(map[string]struct{}, len(frontend.List.Columns))
+	referenceImports := make(map[string]string)
 	for _, item := range frontend.List.Columns {
 		name := strings.TrimSpace(item.Field)
 		if name == "" {
@@ -754,10 +763,41 @@ func validateFrontendSpec(spec ObjectSpec, fields map[string]FieldSpec) error {
 			return fmt.Errorf("duplicate frontend list column %s", name)
 		}
 		seenColumns[name] = struct{}{}
-		switch strings.TrimSpace(item.DataType) {
-		case "", "string", "number", "boolean", "date":
+		dataType := strings.TrimSpace(item.DataType)
+		switch dataType {
+		case "", "string", "number", "boolean", "date", "reference":
 		default:
 			return fmt.Errorf("frontend list column %s has unsupported dataType %q", name, item.DataType)
+		}
+		if item.Reference != nil {
+			referenceName := strings.TrimSpace(item.Reference.Name)
+			referenceImport := strings.TrimSpace(item.Reference.Import)
+			referenceField := strings.TrimSpace(item.Reference.Field)
+			if referenceName == "" {
+				return fmt.Errorf("frontend list column %s reference.name is required", name)
+			}
+			if !token.IsIdentifier(referenceName) {
+				return fmt.Errorf("frontend list column %s reference.name %q must be a valid identifier", name, referenceName)
+			}
+			if referenceImport == "" {
+				return fmt.Errorf("frontend list column %s reference.import is required", name)
+			}
+			if referenceField == "" {
+				return fmt.Errorf("frontend list column %s reference.field is required", name)
+			}
+			if !isTypeScriptIdentifier(referenceField) {
+				return fmt.Errorf("frontend list column %s reference.field %q must be a valid TypeScript property identifier", name, referenceField)
+			}
+			if _, exists := frontendListNames[referenceField]; !exists {
+				return fmt.Errorf("frontend list column %s reference.field %s does not match a JSON-visible list field", name, referenceField)
+			}
+			if dataType != "" && dataType != "reference" {
+				return fmt.Errorf("frontend list column %s reference requires dataType reference when dataType is set", name)
+			}
+			if existingImport, exists := referenceImports[referenceName]; exists && existingImport != referenceImport {
+				return fmt.Errorf("frontend list reference %s is imported from both %q and %q", referenceName, existingImport, referenceImport)
+			}
+			referenceImports[referenceName] = referenceImport
 		}
 		switch strings.TrimSpace(item.Align) {
 		case "", "left", "center", "right":

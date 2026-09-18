@@ -4,6 +4,9 @@ import {
 	defineCollection,
 	type GridCommand,
 } from "@katren/vue-collection-lib";
+{{- range .Frontend.List.ReferenceImports }}
+import { {{ range $i, $name := .Names }}{{ if $i }}, {{ end }}{{ $name }}{{ end }} } from "{{ .From }}";
+{{- end }}
 import { {{ .Camel }}Api } from "@/api/{{ .FileBase }}.gen";
 {{- if .HasCustomList }}
 import type { {{ .ListModelName }} } from "@/types/{{ .ListFileBase }}.gen";
@@ -92,11 +95,18 @@ export const {{ .Camel }}Collection = defineCollection<
 			field: "{{ .Field.TSName }}",
 			headerKey: "{{ $.Name }}.fields.{{ .Field.TSName }}",
 			sortable: {{ .Sortable }},
+{{- if .SortField }}
+			sortField: {{ printf "%q" .SortField }},
+{{- end }}
 {{- if .Editable }}
 			editable: true,
 {{- end }}
 {{- if .DataType }}
 			dataType: "{{ .DataType }}",
+{{- end }}
+{{- if .ReferenceName }}
+			reference: {{ .ReferenceName }},
+			referenceField: "{{ .ReferenceField }}",
 {{- end }}
 {{- if .Align }}
 			align: "{{ .Align }}",

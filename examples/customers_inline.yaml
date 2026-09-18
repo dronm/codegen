@@ -93,7 +93,7 @@ frontend:
         label: Name
         width: 30rem
 
-      # json/jsonb and date fields are not assigned a generated inline editor.
+      # json/jsonb fields are not assigned a generated inline editor.
       # ref_1c is nullable, so inline creation can safely initialize it to null.
       - field: ref_1c
         label: 1C reference

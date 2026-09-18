@@ -1104,6 +1104,181 @@ func TestFrontendInlineListGeneratesNativeInlineEditing(t *testing.T) {
 	}
 }
 
+func TestFrontendInlineListSupportsReferenceColumnsSortFieldAndDates(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig(t)
+	cfg.ServerRoot = t.TempDir()
+	cfg.FrontendRoot = filepath.Join(cfg.ServerRoot, "front")
+	cfg.BackendEnabled = false
+	cfg.FrontendEnabled = true
+	cfg.APITestEnabled = false
+	cfg.MigrationsEnabled = false
+
+	formEnabled := false
+	spec := ObjectSpec{
+		Name:  "MaterialStatus",
+		Table: TableSpec{Schema: "public", Name: "material_statuses"},
+		Route: "/material-statuses",
+		Keys:  []KeySpec{{Name: "id", Type: "int"}},
+		Fields: []FieldSpec{
+			{Name: "id", Type: "int", PrimaryKey: true, AutoIncrement: true, ServerGenerated: true},
+			{Name: "material_id", Type: "int", Required: true},
+			{Name: "material", Type: "jsonb", ReadOnly: true, ServerGenerated: true},
+			{Name: "status_date", Type: "date", Required: true, Default: "CURRENT_DATE"},
+		},
+		CRUD: CRUDSpec{Create: true, List: true, Update: true, Delete: true},
+		ApplicationRoute: ApplicationRouteSpec{
+			Enabled:     true,
+			Name:        "materialStatuses",
+			Path:        "/material-statuses",
+			Description: "Material statuses",
+			Section:     "Inventory",
+		},
+		Frontend: FrontendSpec{
+			Scaffold: true,
+			Form:     FrontendFormSpec{Enabled: &formEnabled},
+			List: FrontendListSpec{
+				EditMode: "inline",
+				Columns: []FrontendListColumnSpec{
+					{Field: "id"},
+					{
+						Field:     "material_id",
+						Label:     "Материал",
+						Editable:  boolPointer(true),
+						SortField: `material->>'descr'`,
+						Reference: &FrontendListReferenceSpec{
+							Name:   "materialReference",
+							Import: "@/references/inventoryReferences",
+							Field:  "material",
+						},
+					},
+					{Field: "status_date"},
+				},
+			},
+		},
+		Migration: MigrationSpec{Enabled: boolPointer(false)},
+	}
+
+	view, err := BuildObjectView(cfg, spec)
+	if err != nil {
+		t.Fatalf("BuildObjectView(): %v", err)
+	}
+	if err := NewRenderer(cfg).RenderObject(view); err != nil {
+		t.Fatalf("RenderObject(): %v", err)
+	}
+
+	collection := readTestFile(t, filepath.Join(cfg.FrontendRoot, "src/collections/materialStatus.gen.ts"))
+	for _, expected := range []string{
+		`import { materialReference } from "@/references/inventoryReferences";`,
+		`field: "material_id",`,
+		`headerKey: "MaterialStatus.fields.material_id",`,
+		`sortField: "material->>'descr'",`,
+		`editable: true,`,
+		`dataType: "reference",`,
+		`reference: materialReference,`,
+		`referenceField: "material",`,
+		`field: "status_date",`,
+		`dataType: "date",`,
+	} {
+		if !strings.Contains(collection, expected) {
+			t.Fatalf("reference/date inline collection missing %q\n%s", expected, collection)
+		}
+	}
+
+	dateStart := strings.Index(collection, `field: "status_date",`)
+	if dateStart < 0 {
+		t.Fatalf("date column not found\n%s", collection)
+	}
+	dateEnd := strings.Index(collection[dateStart:], "\n\t\t},")
+	if dateEnd < 0 {
+		t.Fatalf("date column end not found\n%s", collection[dateStart:])
+	}
+	dateColumn := collection[dateStart : dateStart+dateEnd]
+	if !strings.Contains(dateColumn, "editable: true") {
+		t.Fatalf("date column must be inline editable\n%s", dateColumn)
+	}
+}
+
+func TestLoadObjectsSupportsInlineReferenceColumnSyntax(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	content := `
+name: MaterialStatus
+table:
+  schema: public
+  name: material_statuses
+route: /material-statuses
+keys:
+  - name: id
+    type: int
+fields:
+  - name: id
+    type: int
+    primaryKey: true
+    autoIncrement: true
+    serverGenerated: true
+  - name: material_id
+    type: int
+    required: true
+  - name: material
+    type: jsonb
+    readOnly: true
+    serverGenerated: true
+  - name: status_date
+    type: date
+    required: true
+    default: CURRENT_DATE
+crud:
+  create: true
+  list: true
+  update: true
+applicationRoute:
+  enabled: true
+  name: materialStatuses
+  path: /material-statuses
+  description: Material statuses
+  section: Inventory
+frontend:
+  scaffold: true
+  form:
+    enabled: false
+  list:
+    editMode: inline
+    columns:
+      - field: material_id
+        label: Материал
+        editable: true
+        reference:
+          name: materialReference
+          import: "@/references/inventoryReferences"
+          field: material
+        sortField: "material->>'descr'"
+      - field: status_date
+migration:
+  enabled: false
+`
+	if err := os.WriteFile(filepath.Join(dir, "materialStatus.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	objects, err := LoadObjects(dir)
+	if err != nil {
+		t.Fatalf("LoadObjects(): %v", err)
+	}
+	if len(objects) != 1 || len(objects[0].Frontend.List.Columns) != 2 {
+		t.Fatalf("unexpected objects: %+v", objects)
+	}
+	column := objects[0].Frontend.List.Columns[0]
+	if column.Reference == nil || column.Reference.Name != "materialReference" || column.Reference.Field != "material" {
+		t.Fatalf("reference column was not decoded: %+v", column)
+	}
+	if column.SortField != `material->>'descr'` {
+		t.Fatalf("unexpected sortField %q", column.SortField)
+	}
+}
+
 func TestFrontendInlineListRequiresCreateFieldsWithoutDefaultsToBeEditable(t *testing.T) {
 	t.Parallel()
 

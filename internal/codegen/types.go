@@ -194,20 +194,29 @@ type FrontendListView struct {
 	Inline            bool
 	CanInlineCreate   bool
 	NeedsFormatDate   bool
+	ReferenceImports  []FrontendListReferenceImportView
 	Columns           []FrontendListColumnView
 	CreateRowFields   []FrontendInlineCreateFieldView
 	CreateModelFields []FrontendInlineCreateModelFieldView
 }
 
+type FrontendListReferenceImportView struct {
+	From  string
+	Names []string
+}
+
 type FrontendListColumnView struct {
-	Field    FieldView
-	Label    string
-	Width    string
-	Sortable bool
-	Editable bool
-	DataType string
-	Align    string
-	Format   string
+	Field          FieldView
+	Label          string
+	Width          string
+	Sortable       bool
+	SortField      string
+	Editable       bool
+	DataType       string
+	Align          string
+	Format         string
+	ReferenceName  string
+	ReferenceField string
 }
 
 type FrontendInlineCreateFieldView struct {

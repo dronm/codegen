@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `frontend.list.columns[].reference` metadata for generated reference-backed collection columns, including automatic named imports and `referenceField`.
+- Add `frontend.list.columns[].sortField` passthrough for projected/server-side sort expressions.
+- Enable generated inline editing for date, datetime, and timestamptz columns using `dataType: "date"`.
 - Generate `never` update models for read-only frontend collections so their
   types match the generated CRUD API contract.
 - Add independent `httpRoutes.enabled` and `httpRoutes.manualMethods` ownership
