@@ -906,7 +906,21 @@ Supported generated inline editors are currently:
 - string/text/enum/password/time → text editor;
 - int/bigint/float/numeric → numeric editor;
 - bool → checkbox editor;
-- date/datetime/timestamptz → date editor through `dataType: "date"`.
+- date → date-only editor through `dataType: "date"`;
+- datetime/timestamptz → date-and-time editor through `dataType: "datetime"`.
+
+For date/time fields, the schema type drives the generated grid metadata. A field declared as:
+
+```yaml
+- name: created_at
+  type: timestamptz
+  required: true
+  default: "now()"
+```
+
+generates an inline column with `dataType: "datetime"`. A plain `type: date` generates `dataType: "date"`. The collection library can therefore use a date-only picker for `date` and a date+time picker for `datetime`/`timestamptz`. You can also set `dataType: datetime` explicitly on a list column when necessary.
+
+Inline draft defaults are derived from safe schema defaults. Boolean and numeric literals are preserved, nullable fields without a default initialize to `null`, and date/datetime/timestamptz fields using `now()` or a `CURRENT_*` default initialize to `new Date()`. Arbitrary SQL expressions are intentionally not translated into TypeScript.
 
 Writable scalar fields are editable by default in inline mode. Override an individual column when needed:
 

@@ -50,6 +50,12 @@ const createModel = (row: ListModel): CreateModel => ({
 {{- end }}
 {{- if .Frontend.List.NeedsFormatDate }}
 const formatDate = (value: unknown): string => value instanceof Date
+	? value.toLocaleDateString("ru-RU")
+	: "";
+
+{{- end }}
+{{- if .Frontend.List.NeedsFormatDateTime }}
+const formatDateTime = (value: unknown): string => value instanceof Date
 	? value.toLocaleString("ru-RU")
 	: "";
 

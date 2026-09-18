@@ -1193,6 +1193,7 @@ func TestFrontendInlineListSupportsReferenceColumnsSortFieldAndDates(t *testing.
 		Keys:  []KeySpec{{Name: "id", Type: "int"}},
 		Fields: []FieldSpec{
 			{Name: "id", Type: "int", PrimaryKey: true, AutoIncrement: true, ServerGenerated: true},
+			{Name: "created_at", Type: "timestamptz", Required: true, Default: "now()"},
 			{Name: "material_id", Type: "int", Required: true},
 			{Name: "material", Type: "jsonb", ReadOnly: true, ServerGenerated: true},
 			{Name: "status_date", Type: "date", Required: true, Default: "CURRENT_DATE"},
@@ -1212,6 +1213,7 @@ func TestFrontendInlineListSupportsReferenceColumnsSortFieldAndDates(t *testing.
 				EditMode: "inline",
 				Columns: []FrontendListColumnSpec{
 					{Field: "id"},
+					{Field: "created_at"},
 					{
 						Field:     "material_id",
 						Label:     "Материал",
@@ -1248,8 +1250,13 @@ func TestFrontendInlineListSupportsReferenceColumnsSortFieldAndDates(t *testing.
 		`dataType: "reference",`,
 		`reference: materialReference,`,
 		`referenceField: "material",`,
+		`field: "created_at",`,
+		`dataType: "datetime",`,
+		`format: formatDateTime,`,
 		`field: "status_date",`,
 		`dataType: "date",`,
+		`format: formatDate,`,
+		`created_at: new Date(),`,
 	} {
 		if !strings.Contains(collection, expected) {
 			t.Fatalf("reference/date inline collection missing %q\n%s", expected, collection)
@@ -1300,6 +1307,10 @@ fields:
     type: date
     required: true
     default: CURRENT_DATE
+  - name: created_at
+    type: timestamptz
+    required: true
+    default: now()
 crud:
   create: true
   list: true
@@ -1326,6 +1337,8 @@ frontend:
           field: material
         sortField: "material->>'descr'"
       - field: status_date
+      - field: created_at
+        dataType: datetime
 migration:
   enabled: false
 `
@@ -1337,7 +1350,7 @@ migration:
 	if err != nil {
 		t.Fatalf("LoadObjects(): %v", err)
 	}
-	if len(objects) != 1 || len(objects[0].Frontend.List.Columns) != 2 {
+	if len(objects) != 1 || len(objects[0].Frontend.List.Columns) != 3 {
 		t.Fatalf("unexpected objects: %+v", objects)
 	}
 	column := objects[0].Frontend.List.Columns[0]
@@ -1346,6 +1359,9 @@ migration:
 	}
 	if column.SortField != `material->>'descr'` {
 		t.Fatalf("unexpected sortField %q", column.SortField)
+	}
+	if objects[0].Frontend.List.Columns[2].DataType != "datetime" {
+		t.Fatalf("datetime dataType was not decoded: %+v", objects[0].Frontend.List.Columns[2])
 	}
 }
 

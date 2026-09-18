@@ -188,16 +188,17 @@ type FrontendComponentImportView struct {
 }
 
 type FrontendListView struct {
-	Enabled           bool
-	PageSize          int
-	EditMode          string
-	Inline            bool
-	CanInlineCreate   bool
-	NeedsFormatDate   bool
-	ReferenceImports  []FrontendListReferenceImportView
-	Columns           []FrontendListColumnView
-	CreateRowFields   []FrontendInlineCreateFieldView
-	CreateModelFields []FrontendInlineCreateModelFieldView
+	Enabled             bool
+	PageSize            int
+	EditMode            string
+	Inline              bool
+	CanInlineCreate     bool
+	NeedsFormatDate     bool
+	NeedsFormatDateTime bool
+	ReferenceImports    []FrontendListReferenceImportView
+	Columns             []FrontendListColumnView
+	CreateRowFields     []FrontendInlineCreateFieldView
+	CreateModelFields   []FrontendInlineCreateModelFieldView
 }
 
 type FrontendListReferenceImportView struct {

@@ -291,6 +291,14 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 		dataType, align, format := frontendColumnPresentation(field)
 		if strings.TrimSpace(columnSpec.DataType) != "" {
 			dataType = strings.TrimSpace(columnSpec.DataType)
+			switch dataType {
+			case "date":
+				format = "formatDate"
+				align = ""
+			case "datetime":
+				format = "formatDateTime"
+				align = ""
+			}
 		}
 		referenceName := ""
 		referenceField := ""
@@ -325,8 +333,11 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 			ReferenceName:  referenceName,
 			ReferenceField: referenceField,
 		})
-		if format == "formatDate" {
+		switch format {
+		case "formatDate":
 			view.NeedsFormatDate = true
+		case "formatDateTime":
+			view.NeedsFormatDateTime = true
 		}
 	}
 	if len(referenceImports) > 0 {
@@ -415,11 +426,11 @@ func frontendInlineDraftLiteral(field FieldView) string {
 		}
 		return "{}"
 	case "date", "datetime", "timestamptz":
-		if field.Nullable {
-			return "null"
-		}
 		if strings.Contains(strings.ToLower(defaultValue), "now") || strings.Contains(strings.ToLower(defaultValue), "current_") {
 			return "new Date()"
+		}
+		if field.Nullable {
+			return "null"
 		}
 		return "new Date(0)"
 	default:
@@ -548,8 +559,10 @@ func frontendColumnPresentation(field FieldView) (string, string, string) {
 		return "number", "right", ""
 	case "bool":
 		return "boolean", "", ""
-	case "date", "datetime", "timestamptz":
+	case "date":
 		return "date", "", "formatDate"
+	case "datetime", "timestamptz":
+		return "datetime", "", "formatDateTime"
 	default:
 		return "", "", ""
 	}

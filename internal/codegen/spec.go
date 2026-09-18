@@ -765,7 +765,7 @@ func validateFrontendSpec(spec ObjectSpec, fields map[string]FieldSpec) error {
 		seenColumns[name] = struct{}{}
 		dataType := strings.TrimSpace(item.DataType)
 		switch dataType {
-		case "", "string", "number", "boolean", "date", "reference":
+		case "", "string", "number", "boolean", "date", "datetime", "reference":
 		default:
 			return fmt.Errorf("frontend list column %s has unsupported dataType %q", name, item.DataType)
 		}
