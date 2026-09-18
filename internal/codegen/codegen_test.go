@@ -997,6 +997,76 @@ func TestFrontendCustomListPageImportsSeparateProjection(t *testing.T) {
 	}
 }
 
+func TestFrontendInlineListUsesColumnLabelsWithoutGeneratedForm(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig(t)
+	cfg.ServerRoot = t.TempDir()
+	cfg.FrontendRoot = filepath.Join(cfg.ServerRoot, "front")
+	cfg.BackendEnabled = false
+	cfg.FrontendEnabled = true
+	cfg.APITestEnabled = false
+	cfg.MigrationsEnabled = false
+
+	spec := ObjectSpec{
+		Name:            "MaterialStatus",
+		HumanName:       "material status",
+		HumanNamePlural: "material statuses",
+		Table:           TableSpec{Schema: "public", Name: "material_statuses"},
+		Route:           "/material-statuses",
+		Keys:            []KeySpec{{Name: "id", PathName: "id", Type: "int"}},
+		Fields: []FieldSpec{
+			{Name: "id", Type: "int", PrimaryKey: true, AutoIncrement: true, ServerGenerated: true},
+			{Name: "material_id", Type: "int", Required: true},
+			{Name: "status", Type: "text", Required: true},
+			{Name: "is_active", Type: "bool", Required: true, Default: "true"},
+		},
+		CRUD: CRUDSpec{Create: true, List: true, Detail: true, Update: true, Delete: true},
+		ApplicationRoute: ApplicationRouteSpec{
+			Enabled:     true,
+			Name:        "materialStatuses",
+			Path:        "/material-statuses",
+			Description: "Статусы материалов",
+			Section:     "Справочники",
+		},
+		Frontend: FrontendSpec{
+			Scaffold: true,
+			List: FrontendListSpec{
+				EditMode: "inline",
+				Columns: []FrontendListColumnSpec{
+					{Field: "id", Label: "ID"},
+					{Field: "material_id", Label: "Материал"},
+					{Field: "status", Label: "Статус"},
+					{Field: "is_active", Label: "Активна"},
+				},
+			},
+		},
+		Migration: MigrationSpec{Enabled: boolPointer(false)},
+	}
+
+	view, err := BuildObjectView(cfg, spec)
+	if err != nil {
+		t.Fatalf("BuildObjectView(): %v", err)
+	}
+	if view.Frontend.Form.Enabled {
+		t.Fatal("inline list unexpectedly enabled the page edit form")
+	}
+
+	labels := make(map[string]string)
+	for _, field := range view.Frontend.LocaleFields {
+		labels[field.Name] = field.Label
+	}
+	for field, expected := range map[string]string{
+		"material_id": "Материал",
+		"status":      "Статус",
+		"is_active":   "Активна",
+	} {
+		if labels[field] != expected {
+			t.Fatalf("locale label %s = %q, want %q", field, labels[field], expected)
+		}
+	}
+}
+
 func TestFrontendInlineListGeneratesNativeInlineEditing(t *testing.T) {
 	t.Parallel()
 

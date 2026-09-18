@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix generated inline collection labels so explicit list-column labels are not shadowed by disabled/default form labels.
+- Disable page-form scaffolding by default for `frontend.list.editMode: inline`; it can still be explicitly enabled.
 - Add `frontend.list.columns[].reference` metadata for generated reference-backed collection columns, including automatic named imports and `referenceField`.
 - Add `frontend.list.columns[].sortField` passthrough for projected/server-side sort expressions.
 - Enable generated inline editing for date, datetime, and timestamptz columns using `dataType: "date"`.
@@ -21,6 +23,8 @@
 
 ## Unreleased
 
+- Fix generated inline collection labels so explicit list-column labels are not shadowed by disabled/default form labels.
+- Disable page-form scaffolding by default for `frontend.list.editMode: inline`; it can still be explicitly enabled.
 - added monthly accumulation-register schemas with typed dimensions and additive resources;
 - added the embedded, versioned register common-runtime repository and automatic bootstrap migration;
 - generated immutable action ledgers, monthly/current aggregates, balance, summary, and rebuild functions;

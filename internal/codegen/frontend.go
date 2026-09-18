@@ -49,12 +49,16 @@ func buildFrontendView(spec ObjectSpec, object ObjectView) FrontendView {
 
 func buildFrontendLocaleFields(form FrontendFormView, list FrontendListView) []FrontendLocaleFieldView {
 	labels := make(map[string]string)
-	for _, field := range form.Fields {
-		labels[field.Field.TSName] = field.Label
+	if form.Enabled {
+		for _, field := range form.Fields {
+			labels[field.Field.TSName] = field.Label
+		}
 	}
-	for _, column := range list.Columns {
-		if _, exists := labels[column.Field.TSName]; !exists {
-			labels[column.Field.TSName] = column.Label
+	if list.Enabled {
+		for _, column := range list.Columns {
+			if _, exists := labels[column.Field.TSName]; !exists {
+				labels[column.Field.TSName] = column.Label
+			}
 		}
 	}
 	names := make([]string, 0, len(labels))
@@ -138,7 +142,8 @@ func buildFrontendRoutes(spec ObjectSpec, object ObjectView) FrontendRoutesView 
 }
 
 func buildFrontendForm(spec ObjectSpec, object ObjectView) FrontendFormView {
-	enabled := spec.Frontend.Scaffold && object.CRUD.Create && object.CRUD.Detail && object.CRUD.Update
+	inlineList := strings.EqualFold(strings.TrimSpace(spec.Frontend.List.EditMode), "inline")
+	enabled := spec.Frontend.Scaffold && object.CRUD.Create && object.CRUD.Detail && object.CRUD.Update && !inlineList
 	if spec.Frontend.Form.Enabled != nil {
 		enabled = *spec.Frontend.Form.Enabled
 	}

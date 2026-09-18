@@ -863,7 +863,10 @@ Custom components must be imported explicitly and must support the same `modelVa
 
 ### 8.5 Inline collection editing
 
-Set `frontend.list.editMode: inline` to generate a `CollectionGrid` that edits rows directly in the grid:
+Set `frontend.list.editMode: inline` to generate a `CollectionGrid` that edits rows directly in the grid. Inline mode disables the generated page edit form by default; set `frontend.form.enabled: true` explicitly if both editing surfaces are required.
+
+Column `label` values are emitted into the generated locale and are used by the collection header. Disabled form scaffolds do not contribute fallback field labels, so an inline list label such as `label: Материал` remains authoritative for that column.
+
 
 ```yaml
 frontend:

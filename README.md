@@ -22,7 +22,7 @@ optional API integration test
 optional Vue 3 / TypeScript / Valibot / PrimeVue scaffold
 ```
 
-Generated Vue collection pages support both page-based editing and native inline row editing through `@katren/vue-collection-lib`. Inline mode includes generated editable-column metadata, inline create drafts, typed create payload mapping, reference-backed editors, custom server-side `sortField` expressions, and date editing.
+Generated Vue collection pages support both page-based editing and native inline row editing through `@katren/vue-collection-lib`. Inline mode includes generated editable-column metadata, inline create drafts, typed create payload mapping, reference-backed editors, custom server-side `sortField` expressions, and date editing. Inline mode disables the separate page form by default unless `frontend.form.enabled: true` is explicitly set, and explicit list-column labels remain authoritative for generated collection headers.
 
 Accumulation-register schemas generate a versioned common PostgreSQL runtime, immutable `ra_*` action ledgers, monthly/current `rg_*` aggregates, typed balance/summary functions, and Go repositories. Recorder-specific document posting remains hand-written and transactional.
 
