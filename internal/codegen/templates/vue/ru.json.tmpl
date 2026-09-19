@@ -14,4 +14,11 @@
 		}
 	}
 {{- end }}
+{{- range $enumIndex, $enum := .Enums }}{{ if or $.Objects $enumIndex }},{{ end }}
+	{{ goQuote .FrontendName }}: {
+{{- range $valueIndex, $value := .Values }}{{ if $valueIndex }},{{ end }}
+		{{ jsonString $value.Value }}: {{ jsonString $value.Label }}
+{{- end }}
+	}
+{{- end }}
 }

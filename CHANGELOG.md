@@ -1,14 +1,12 @@
 # Changelog
 
-## Unreleased
-
 - Distinguish inline date-only and date+time columns: `date` generates `dataType: "date"`, while `datetime`/`timestamptz` generate `dataType: "datetime"`.
 - Preserve safe date/time defaults in inline drafts, including `now()`/`CURRENT_*` as `new Date()`.
 - Fix generated inline collection labels so explicit list-column labels are not shadowed by disabled/default form labels.
 - Disable page-form scaffolding by default for `frontend.list.editMode: inline`; it can still be explicitly enabled.
 - Add `frontend.list.columns[].reference` metadata for generated reference-backed collection columns, including automatic named imports and `referenceField`.
 - Add `frontend.list.columns[].sortField` passthrough for projected/server-side sort expressions.
-- Enable generated inline editing for date, datetime, and timestamptz columns using `dataType: "date"`.
+- Enable generated inline editing for date, datetime, and timestamptz columns using their date-only/date+time metadata.
 - Generate `never` update models for read-only frontend collections so their
   types match the generated CRUD API contract.
 - Add independent `httpRoutes.enabled` and `httpRoutes.manualMethods` ownership
@@ -25,8 +23,22 @@
 
 ## Unreleased
 
-- Fix generated inline collection labels so explicit list-column labels are not shadowed by disabled/default form labels.
-- Disable page-form scaffolding by default for `frontend.list.editMode: inline`; it can still be explicitly enabled.
+- Add shared top-level enum definitions, metadata inference, cross-schema conflict
+  validation, and explicit `frontendDefault` values for typed inline drafts.
+- Generate managed TypeScript enum values/literal unions, locale-aware Valibot
+  picklists, typed base/detail/list models, and localized enum labels.
+- Generate native enum collection columns with `enumOptions`, nullability-aware
+  clear behavior, and preserved format/search/editor overrides.
+- Scaffold enum form Select inputs with unselected drafts when no default is set;
+  preserve developer-owned Vue files and generated contract boundaries.
+- Track generated enum ownership for `check` and scoped stale-file cleanup;
+  leave manual translations, Go enum registration, and PostgreSQL enum DDL alone.
+- Validate the minimum enum collection-library version (0.1.10) only for affected
+  frontends, without rewriting package manifests or lockfiles.
+- Preserve legacy backend-only enums and existing reference, label, datetime,
+  projection, and non-enum output behavior.
+- Add enum regression tests, a MaterialStatus example, and frontend enum docs.
+
 - added monthly accumulation-register schemas with typed dimensions and additive resources;
 - added the embedded, versioned register common-runtime repository and automatic bootstrap migration;
 - generated immutable action ledgers, monthly/current aggregates, balance, summary, and rebuild functions;

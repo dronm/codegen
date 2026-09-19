@@ -39,6 +39,19 @@ func buildFrontendView(spec ObjectSpec, object ObjectView) FrontendView {
 		frontend.Title = object.HumanPlural
 	}
 
+	for _, key := range object.FrontendKeys {
+		frontend.HasEnumKeys = frontend.HasEnumKeys || key.EnumDefinition != nil
+	}
+	frontend.Enums = frontendEnumsForFields(object.FrontendFields)
+	frontend.DetailEnums = frontendEnumsForFields(object.FrontendDetailFields)
+	frontend.ListEnums = frontendEnumsForFields(object.FrontendListFields)
+	frontend.TypeImports = withFrontendEnumImports(frontend.TypeImports, frontend.Enums, false)
+	frontend.SchemaImports = withFrontendEnumImports(frontend.SchemaImports, frontend.Enums, true)
+	frontend.DetailTypeImports = withFrontendEnumImports(frontend.DetailTypeImports, frontend.DetailEnums, false)
+	frontend.DetailSchemaImports = withFrontendEnumImports(frontend.DetailSchemaImports, frontend.DetailEnums, true)
+	frontend.ListTypeImports = withFrontendEnumImports(frontend.ListTypeImports, frontend.ListEnums, false)
+	frontend.ListSchemaImports = withFrontendEnumImports(frontend.ListSchemaImports, frontend.ListEnums, true)
+
 	frontend.Routes = buildFrontendRoutes(spec, object)
 	frontend.Form = buildFrontendForm(spec, object)
 	frontend.List = buildFrontendList(spec, object)
@@ -170,6 +183,9 @@ func buildFrontendForm(spec ObjectSpec, object ObjectView) FrontendFormView {
 		view.CopyTitle = frontendTitle(spec, object)
 	}
 
+	for _, field := range object.FrontendCreateFields {
+		view.HasEnumFields = view.HasEnumFields || field.EnumDefinition != nil
+	}
 	fieldByName := frontendFieldMap(object.FrontendFields)
 	formSpecs := spec.Frontend.Form.Fields
 	if len(formSpecs) == 0 {
@@ -217,13 +233,21 @@ func buildFrontendForm(spec ObjectSpec, object ObjectView) FrontendFormView {
 			DisableExpression: disableExpression,
 			CustomComponent:   isCustomFrontendComponent(formSpec.Component),
 		})
-		if field.Nullable && isTextLikeType(field.Type) {
+		if field.Nullable && field.EnumDefinition == nil && isTextLikeType(field.Type) {
 			view.NeedsNullableText = true
 		}
 		if isDateLikeType(field.Type) {
 			view.NeedsFormatDate = true
 		}
 	}
+
+	enumFields := []FieldView{}
+	for _, field := range view.Fields {
+		if !field.Hidden && field.Component == "Select" {
+			enumFields = append(enumFields, field.Field)
+		}
+	}
+	view.Enums = frontendEnumsForFields(enumFields)
 
 	componentNames := make([]string, 0, len(imports))
 	for name := range imports {
@@ -320,18 +344,27 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 				width = frontendColumnWidth(field)
 			}
 		}
+		if columnSpec.Format != "" {
+			format = strings.TrimSpace(columnSpec.Format)
+		}
 		view.Columns = append(view.Columns, FrontendListColumnView{
-			Field:          field,
-			Label:          frontendFieldLabel(columnSpec.Label, field),
-			Width:          width,
-			Sortable:       sortable,
-			SortField:      strings.TrimSpace(columnSpec.SortField),
-			Editable:       editable,
-			DataType:       dataType,
-			Align:          align,
-			Format:         format,
-			ReferenceName:  referenceName,
-			ReferenceField: referenceField,
+			EnumDefinition:   field.EnumDefinition,
+			EditorProps:      frontendEnumEditorProps(field, columnSpec.EditorProps),
+			Searchable:       columnSpec.Searchable,
+			SearchField:      columnSpec.SearchField,
+			SearchDataType:   columnSpec.SearchDataType,
+			SearchOperations: columnSpec.SearchOperations,
+			Field:            field,
+			Label:            frontendFieldLabel(columnSpec.Label, field),
+			Width:            width,
+			Sortable:         sortable,
+			SortField:        strings.TrimSpace(columnSpec.SortField),
+			Editable:         editable,
+			DataType:         dataType,
+			Align:            align,
+			Format:           format,
+			ReferenceName:    referenceName,
+			ReferenceField:   referenceField,
 		})
 		switch format {
 		case "formatDate":
@@ -340,6 +373,11 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 			view.NeedsFormatDateTime = true
 		}
 	}
+	columnFields := make([]FieldView, 0, len(view.Columns))
+	for _, column := range view.Columns {
+		columnFields = append(columnFields, column.Field)
+	}
+	view.Enums = frontendEnumsForFields(columnFields)
 	if len(referenceImports) > 0 {
 		namesByImport := make(map[string][]string)
 		for name, from := range referenceImports {
@@ -392,10 +430,24 @@ func supportsGeneratedInlineEditor(field FieldView) bool {
 }
 
 func hasSafeInlineCreateDefault(field FieldView) bool {
+	if field.EnumDefinition != nil {
+		return field.EnumDefault != nil || field.Nullable || field.TSOptional
+	}
 	return field.Nullable || strings.TrimSpace(field.Default) != ""
 }
 
 func frontendInlineDraftLiteral(field FieldView) string {
+	if field.EnumDefinition != nil {
+		if field.EnumDefault != nil {
+			return jsonString(*field.EnumDefault)
+		}
+		if field.Nullable {
+			return "null"
+		}
+		// Optional properties can be absent; mandatory drafts are rejected by
+		// validateFrontendEnumView before any file is rendered.
+		return "undefined"
+	}
 	defaultValue := strings.TrimSpace(field.Default)
 
 	switch field.Type {
@@ -466,6 +518,9 @@ func isCustomFrontendComponent(component string) bool {
 func frontendFormComponent(field FieldView, spec FrontendFormFieldSpec) (string, string) {
 	component := strings.TrimSpace(spec.Component)
 	componentImport := strings.TrimSpace(spec.ComponentImport)
+	if field.EnumDefinition != nil && strings.EqualFold(component, "select") && componentImport == "" {
+		return "Select", "primevue/select"
+	}
 	if component != "" {
 		switch strings.ToLower(component) {
 		case "text", "inputtext":
@@ -483,6 +538,9 @@ func frontendFormComponent(field FieldView, spec FrontendFormFieldSpec) (string,
 		}
 	}
 
+	if field.EnumDefinition != nil {
+		return "Select", "primevue/select"
+	}
 	switch field.Type {
 	case "int", "bigint", "float", "numeric":
 		return "InputNumber", "primevue/inputnumber"
@@ -506,7 +564,15 @@ func frontendFieldLabel(explicit string, field FieldView) string {
 
 func frontendDefaultLiteral(explicit any, field FieldView) string {
 	if explicit != nil {
+		if field.EnumDefinition != nil {
+			if value, ok := explicit.(string); ok {
+				return jsonString(value)
+			}
+		}
 		return tsLiteral(explicit)
+	}
+	if field.EnumDefinition != nil {
+		return frontendInlineDraftLiteral(field)
 	}
 	if field.Nullable {
 		return "null"
@@ -530,6 +596,12 @@ func frontendDefaultLiteral(explicit any, field FieldView) string {
 
 func frontendSubmitExpression(field FieldView) string {
 	name := "form.value." + field.TSName
+	if field.EnumDefinition != nil {
+		if field.Nullable {
+			return name + " ?? null"
+		}
+		return name + " ?? undefined"
+	}
 	switch field.Type {
 	case "string", "text", "enum", "password", "time":
 		if field.Nullable {
@@ -554,6 +626,10 @@ func frontendSubmitExpression(field FieldView) string {
 }
 
 func frontendColumnPresentation(field FieldView) (string, string, string) {
+	if field.EnumDefinition != nil {
+		return "enum", "", ""
+	}
+
 	switch field.Type {
 	case "int", "bigint", "float", "numeric":
 		return "number", "right", ""
@@ -689,6 +765,11 @@ func isTypeScriptIdentifier(value string) bool {
 }
 
 func validateFrontendView(object ObjectView) error {
+	if len(collectFrontendEnums([]ObjectView{object})) > 0 {
+		if err := validateFrontendEnumView(object); err != nil {
+			return err
+		}
+	}
 	if !object.Frontend.Scaffold {
 		return nil
 	}

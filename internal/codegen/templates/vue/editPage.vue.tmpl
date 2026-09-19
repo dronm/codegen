@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+{{- if .Frontend.HasEnumKeys }}
+import * as v from "valibot";
+{{- end }}
 
 import {
 	CollectionEditPage,
@@ -38,23 +41,23 @@ const edit = useCollectionEditPage<
 	api: {{ .Camel }}Api,
 	createRouteName: "{{ .Frontend.Routes.CreateName }}",
 	listRoute: { name: "{{ .Frontend.Routes.ListName }}" },
-	keyFromRoute: (route) => ({
+	keyFromRoute: (route) => {{ if .Frontend.HasEnumKeys }}v.parse(schemas.{{ .Name }}KeySchema, {{ end }}({
 {{- range .FrontendKeys }}
 		{{ .TSName }}: {{ if .IsNumeric }}Number{{ else }}String{{ end }}(route.params.{{ .PathName }} ?? {{ if .IsNumeric }}0{{ else }}""{{ end }}),
 {{- end }}
-	}),
+	}){{ if .Frontend.HasEnumKeys }}){{ end }},
 	copyKeyFromRoute: (route) => route.query.copy_{{ (index .FrontendKeys 0).PathName }}
-		? ({
+		? {{ if .Frontend.HasEnumKeys }}v.parse(schemas.{{ .Name }}KeySchema, {{ end }}({
 {{- range .FrontendKeys }}
 			{{ .TSName }}: {{ if .IsNumeric }}Number{{ else }}String{{ end }}(route.query.copy_{{ .PathName }} ?? {{ if .IsNumeric }}0{{ else }}""{{ end }}),
 {{- end }}
-		})
+		}){{ if .Frontend.HasEnumKeys }}){{ end }}
 		: null,
 	createModel: create{{ .Name }}FormModel,
 	copyModel: (detail) => ({
 		...detail,
 {{- range .FrontendKeys }}
-{{- if .IsString }}
+{{- if and .IsString (not .EnumDefinition) }}
 		{{ .TSName }}: `${detail.{{ .TSName }}}_COPY`,
 {{- else }}
 		{{ .TSName }}: undefined,
@@ -72,7 +75,7 @@ const edit = useCollectionEditPage<
 	success: { mode: "back" },
 });
 
-const submit = async (model: {{ .Name }}New): Promise<void> => {
+const submit = async (model: {{ .Name }}{{ if .Frontend.Form.HasEnumFields }}FormModel{{ else }}New{{ end }}): Promise<void> => {
 	await edit.submit(model);
 };
 </script>

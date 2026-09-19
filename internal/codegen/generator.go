@@ -25,6 +25,11 @@ func Generate(cfg Config) error {
 	}
 
 	renderer := NewRenderer(cfg)
+	if cfg.FrontendEnabled {
+		if err := renderer.RenderFrontendEnums(objects); err != nil {
+			return fmt.Errorf("render frontend enums: %w", err)
+		}
+	}
 	for _, object := range objects {
 		if err := renderer.RenderObject(object); err != nil {
 			return fmt.Errorf("render object %s: %w", object.Name, err)
@@ -107,6 +112,14 @@ func prepareObjects(cfg Config) ([]ObjectView, error) {
 		objects = append(objects, view)
 	}
 
+	if err := validateEnumNamespaces(objects); err != nil {
+		return nil, err
+	}
+	if cfg.FrontendEnabled {
+		if err := validateEnumCollectionDependency(cfg.FrontendRoot, objects); err != nil {
+			return nil, err
+		}
+	}
 	if err := validateObjectViews(objects); err != nil {
 		return nil, err
 	}
@@ -161,13 +174,18 @@ func LoadObjects(schemaDir string) ([]ObjectSpec, error) {
 		}
 		object.SourceFile = path
 
-		if err := object.Validate(); err != nil {
-			return nil, fmt.Errorf("validate %s: %w", path, err)
-		}
-
 		objects = append(objects, object)
 	}
 
+	objects, err = resolveProjectEnums(objects)
+	if err != nil {
+		return nil, err
+	}
+	for _, object := range objects {
+		if err := object.Validate(); err != nil {
+			return nil, fmt.Errorf("validate %s: %w", object.SourceFile, err)
+		}
+	}
 	sort.Slice(objects, func(i int, j int) bool {
 		return objects[i].Name < objects[j].Name
 	})
@@ -598,7 +616,7 @@ func (r Renderer) RenderFrontendLocale(objects []ObjectView) error {
 		TargetPath:   filepath.Join(r.Config.FrontendRoot, "src", "locales", "ru.gen.json"),
 		Format:       FormatNone,
 	}
-	return r.renderFile(job, RoutesView{Objects: frontendObjects})
+	return r.renderFile(job, FrontendLocaleView{Objects: frontendObjects, Enums: collectFrontendEnums(objects)})
 }
 
 func (r Renderer) RenderRegisters(registers []RegisterView) error {

@@ -2,7 +2,7 @@
 
 This document describes ordinary CRUD object schemas from `schemaDir`. Accumulation registers use a separate schema contract and directory; see [Accumulation registers](registers.md).
 
-This document defines the YAML object language consumed by `github.com/dronm/codegen` and the output contract of the built-in Dronm application profile.
+This document defines the YAML object language consumed by `github.com/dronm/codegen` and the output contract of the built-in application profile.
 
 The generator is intentionally aimed at ordinary database-backed CRUD and administrative entities. It generates a coherent unit:
 
@@ -70,7 +70,7 @@ A separate list projection receives its own modules, matching the base-model/lis
 <frontend>/src/schemas/<list-model>.gen.ts
 ```
 
-The YAML files in the configured `schemaDir` are the source of truth for generated registration. Removing a YAML file removes its route/service call from the generated registry on the next run, but does not delete stale generated files.
+The YAML files in the configured `schemaDir` are the source of truth for generated registration. Removing a YAML file removes its route/service call from the generated registry on the next run, but does not delete ordinary stale generated model files. Shared frontend enum artifacts are the exception: their dedicated ownership manifest supports scoped stale-file cleanup; see [Frontend enums](frontend-enums.md).
 
 ### Manual extensions
 
@@ -903,7 +903,8 @@ For inline mode Codegen generates:
 
 Supported generated inline editors are currently:
 
-- string/text/enum/password/time → text editor;
+- string/text/password/time → text editor;
+- enum with a shared definition → enum selector through `dataType: "enum"` and localized `enumOptions` (requires `vue-collection-lib` 0.1.10+);
 - int/bigint/float/numeric → numeric editor;
 - bool → checkbox editor;
 - date → date-only editor through `dataType: "date"`;
@@ -978,33 +979,43 @@ See [`examples/customers_inline.yaml`](../examples/customers_inline.yaml) for a 
 
 ### 8.6 Custom TypeScript and Valibot types
 
-Fields can override their transport/model representation:
+Non-enum fields can override their transport/model representation:
 
 ```yaml
 fields:
-  - name: product_source
-    type: enum
-    tsType: ProductSource
-    tsDtoType: ProductSource
-    valibotDto: ProductSourceSchema
-    valibotModel: ProductSourceSchema
-```
+  - name: supplier
+    type: jsonb
+    tsType: SupplierReference
+    tsDtoType: SupplierReference
+    valibotDto: SupplierReferenceSchema
+    valibotModel: SupplierReferenceSchema
 
-Required imports are declared by surface:
-
-```yaml
 frontend:
   typeImports:
-    - from: "@/types/productEnums"
-      names: [ProductSource]
+    - from: "@/types/reference"
+      names: [SupplierReference]
       typeOnly: true
-
   schemaImports:
-    - from: "@/schemas/enums/productSource"
-      names: [ProductSourceSchema]
+    - from: "@/schemas/reference"
+      names: [SupplierReferenceSchema]
 ```
 
-`valibotDto` and `valibotModel` are complete expressions. Include `v.nullable`, `v.array`, or other wrappers there when a custom expression needs them.
+`valibotDto` and `valibotModel` are complete expressions. Include `v.nullable`,
+`v.array`, or other wrappers when a custom expression needs them.
+
+Declared enum fields now use the shared top-level `enums` definitions rather
+than manually importing a string alias. Codegen automatically infers the enum
+TypeScript type, adds the required imports, and initializes a locale-aware
+picklist schema. Explicit type metadata must agree; explicit validation may wrap
+the generated enum schema but must not replace it with generic string validation.
+
+The field property `frontendDefault` supplies a validated enum string literal
+for inline creation and is inherited by matching enum list/detail projections.
+The column properties `format`, `searchable`, `searchField`, `searchDataType`,
+`searchOperations`, and JSON-compatible `editorProps` preserve explicit overrides.
+See [Frontend enums](frontend-enums.md) for the full YAML syntax, validation,
+nullability/default rules, generated files, dependency check, and database
+ownership boundary.
 
 ### 8.7 Route and locale integration
 

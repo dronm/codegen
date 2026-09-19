@@ -7,6 +7,9 @@ import {
 {{- range .Frontend.List.ReferenceImports }}
 import { {{ range $i, $name := .Names }}{{ if $i }}, {{ end }}{{ $name }}{{ end }} } from "{{ .From }}";
 {{- end }}
+{{- range .Frontend.List.Enums }}
+import { {{ .ValuesName }} } from "@/types/enums/{{ .FileBase }}.gen";
+{{- end }}
 import { {{ .Camel }}Api } from "@/api/{{ .FileBase }}.gen";
 {{- if .HasCustomList }}
 import type { {{ .ListModelName }} } from "@/types/{{ .ListFileBase }}.gen";
@@ -109,6 +112,31 @@ export const {{ .Camel }}Collection = defineCollection<
 {{- end }}
 {{- if .DataType }}
 			dataType: "{{ .DataType }}",
+{{- end }}
+{{- if .EnumDefinition }}
+			enumOptions: {{ .EnumDefinition.ValuesName }}.map((value) => ({
+				value,
+				labelKey: `{{ .EnumDefinition.FrontendName }}.${value}`,
+			})),
+{{- end }}
+{{- if .EditorProps }}
+			editorProps: {
+{{- range .EditorProps }}
+				{{ printf "%q" .Name }}: {{ .Literal }},
+{{- end }}
+			},
+{{- end }}
+{{- if .Searchable }}
+			searchable: {{ .Searchable }},
+{{- end }}
+{{- if .SearchField }}
+			searchField: {{ printf "%q" .SearchField }},
+{{- end }}
+{{- if .SearchDataType }}
+			searchDataType: {{ printf "%q" .SearchDataType }},
+{{- end }}
+{{- if .SearchOperations }}
+			searchOperations: [{{ range $i, $operation := .SearchOperations }}{{ if $i }}, {{ end }}{{ printf "%q" $operation }}{{ end }}],
 {{- end }}
 {{- if .ReferenceName }}
 			reference: {{ .ReferenceName }},

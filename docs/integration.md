@@ -136,6 +136,19 @@ src/locales/ru.gen.json
 
 The application should merge/import those generated registries from its hand-written router and i18n bootstrap. The exact bootstrap remains application-owned.
 
+### Enum columns
+
+For generated enum collection columns, the frontend must declare an enum-capable
+`@katren/vue-collection-lib` version, for example `^0.1.10`. Codegen validates the
+minimum only for enum-column consumers and never rewrites their `package.json`
+or lockfile. See [Frontend enums](frontend-enums.md) for local dependency support.
+
+Commit `src/types/enums/*.gen.ts`, `src/schemas/enums/*.gen.ts`, and
+`.codegen/frontend-enums.json` under the frontend root. The manifest enables
+scoped stale enum cleanup and `codegen check`. Enum labels are included in the
+same `ru.gen.json` that the application already imports. Supply existing Go enum
+types/modelbind registration and PostgreSQL enum DDL in application-owned code.
+
 ## CI
 
 Commit generated files and run:

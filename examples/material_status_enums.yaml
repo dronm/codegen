@@ -1,0 +1,148 @@
+name: MaterialStatus
+comment: Material status history with an enum-backed inline editor.
+humanName: material status
+humanNamePlural: material statuses
+
+enums:
+  - name: material_status_type
+    goType: MaterialStatusType
+    sqlType: public.material_status_types
+    frontendName: MaterialStatusType
+    values:
+      - value: at_work
+        label: В работе
+      - value: on_maintenance
+        label: На обслуживании
+
+table:
+  schema: public
+  name: material_statuses
+route: /material-statuses
+permissionPrefix: materialStatus
+serviceName: MaterialStatus
+sessionRequired: true
+crudNotifications: true
+keys:
+  - name: id
+    pathName: id
+    type: int
+fields:
+  - name: id
+    type: int
+    primaryKey: true
+    autoIncrement: true
+    serverGenerated: true
+  - name: created_at
+    type: timestamptz
+    required: true
+    default: "now()"
+  - name: material_id
+    type: int
+    required: true
+    references:
+      schema: public
+      table: materials
+      column: id
+      onDelete: CASCADE
+      onUpdate: CASCADE
+  - name: status
+    type: enum
+    enum: material_status_type
+    required: true
+    frontendDefault: at_work
+  - name: is_active
+    type: bool
+    required: true
+    dbRequired: true
+    default: "true"
+
+list:
+  model: MaterialStatusList
+  table:
+    schema: public
+    name: material_statuses_list
+  fields:
+    - name: id
+      type: int
+      primaryKey: true
+    - name: created_at
+      type: timestamptz
+      required: true
+      default: "now()"
+    - name: material_id
+      type: int
+      required: true
+    - name: material
+      type: jsonb
+      goType: "*Ref"
+      required: true
+    - name: status
+      type: enum
+      enum: material_status_type
+      required: true
+    - name: is_active
+      type: bool
+      required: true
+      default: "true"
+
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+permissions:
+  enabled: true
+  grantRoles:
+    - admin
+applicationRoute:
+  enabled: true
+  name: materialStatuses
+  path: /material-statuses
+  description: Статусы материалов
+  section: Справочники
+  icon: pi pi-tags
+  menuAvailable: true
+frontend:
+  scaffold: true
+  title: Статусы материалов
+  form:
+    enabled: false
+  list:
+    editMode: inline
+    pageSize: 30
+    columns:
+      - field: id
+        label: ID
+        width: 8rem
+      - field: created_at
+        label: Дата и время
+        editable: true
+      - field: material_id
+        label: Материал
+        editable: true
+        reference:
+          name: materialReference
+          import: "@/references/inventoryReferences"
+          field: material
+        sortField: "material->>'descr'"
+      - field: status
+        label: Статус
+        editable: true
+      - field: is_active
+        label: Активна
+        editable: true
+  routes:
+    listName: materialStatuses
+    createName: materialStatusCreate
+    editName: materialStatusEdit
+migration:
+  enabled: true
+  indexes:
+    - name: material_statuses_material_id_idx
+      columns:
+        - material_id
+# The application owns public.material_status_types, the MaterialStatusType Go
+# type, modelbind registration, Ref, the SQL view, and materialReference.
+test:
+  enabled: false

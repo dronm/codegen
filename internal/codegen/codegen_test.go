@@ -771,7 +771,7 @@ func TestRenderFrontendScaffoldMatchesExpectedShape(t *testing.T) {
 	collection := readTestFile(t, filepath.Join(cfg.FrontendRoot, "src/collections/warehouseZone.gen.ts"))
 	for _, expected := range []string{
 		"defineCollection",
-		`const formatDate =`,
+		`const formatDateTime =`,
 		`name: "warehouseZoneEdit"`,
 		`stateKey: "warehouseZone-grid"`,
 		`showCommandShortcuts: false`,

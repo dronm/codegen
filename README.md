@@ -141,11 +141,52 @@ See [configuration](docs/configuration.md) for the complete precedence and optio
 
 Put active `*.yaml` or `*.yml` object descriptions directly in the configured `schemaDir`. The generator does not recurse into subdirectories, so a `schema/examples/` directory can safely hold reference files.
 
-Start with [examples/vehicle_brands.yaml](examples/vehicle_brands.yaml) for page editing or [examples/customers_inline.yaml](examples/customers_inline.yaml) for inline collection editing.
+Start with [examples/vehicle_brands.yaml](examples/vehicle_brands.yaml) for page editing, [examples/customers_inline.yaml](examples/customers_inline.yaml) for inline collection editing, or [examples/material_status_enums.yaml](examples/material_status_enums.yaml) for typed enum columns with reference and datetime editors.
 
 The complete schema contract is documented in [docs/schema-reference.md](docs/schema-reference.md).
 
 Put accumulation-register schemas directly in `registers.schemaDir`. Start with [examples/materials_register.yaml](examples/materials_register.yaml). The common runtime repository, generated database functions, Go helpers, recorder transaction pattern, and migration lifecycle are documented in [docs/registers.md](docs/registers.md).
+
+## Frontend enums
+
+Define shared enum values and labels once with top-level `enums`, then reference
+that definition from base, list, and detail fields:
+
+```yaml
+enums:
+  - name: material_status_type
+    goType: MaterialStatusType
+    sqlType: public.material_status_types
+    frontendName: MaterialStatusType
+    values:
+      - value: at_work
+        label: В работе
+      - value: on_maintenance
+        label: На обслуживании
+
+fields:
+  - name: status
+    type: enum
+    enum: material_status_type
+    required: true
+    frontendDefault: at_work
+```
+
+Codegen infers backend type metadata and generates managed TypeScript values and
+literal unions, locale-aware Valibot picklists, `dataType: "enum"` collection
+options, and translated labels. Non-nullable inline enum drafts require an
+explicit valid default; no empty-string or first-option fallback is generated.
+`frontendDefault` does not create a database default.
+
+Enum collection generation checks for `@katren/vue-collection-lib` **0.1.10 or
+newer** without rewriting application package files. Legacy backend-only enums
+remain supported; frontend enums require defined values. PostgreSQL enum DDL,
+Go enum declarations, and modelbind registration remain application-owned.
+Commit `.codegen/frontend-enums.json` inside the frontend root: it tracks managed
+enum artifacts for nondestructive checks and scoped stale-file cleanup.
+
+See [Frontend enums](docs/frontend-enums.md) for projection defaults, generated
+artifacts, column overrides, compatibility, and the full integration procedure.
 
 ## Generated-file ownership
 

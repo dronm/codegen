@@ -22,6 +22,9 @@ export const create{{ .Name }}Schemas = (t: TranslateFn) => {
 {{- else }}
 	createCommonSchemas(t);
 {{- end }}
+{{- range .Frontend.Enums }}
+	const { {{ .FrontendName }}Schema } = create{{ .FrontendName }}Schemas(t);
+{{- end }}
 
 	const {{ .Name }}DTOSchema = v.object({
 {{- range .FrontendFields }}

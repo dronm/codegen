@@ -79,6 +79,8 @@ type ObjectView struct {
 }
 
 type KeyView struct {
+	EnumDefinition *FrontendEnumView
+
 	Name          string
 	Pascal        string
 	Camel         string
@@ -96,6 +98,9 @@ type KeyView struct {
 }
 
 type FieldView struct {
+	EnumDefinition *FrontendEnumView
+	EnumDefault    *string
+
 	Name            string
 	Type            string
 	JSONName        string
@@ -130,6 +135,12 @@ type FieldView struct {
 }
 
 type FrontendView struct {
+	HasEnumKeys bool
+
+	Enums       []FrontendEnumView
+	DetailEnums []FrontendEnumView
+	ListEnums   []FrontendEnumView
+
 	Scaffold            bool
 	Title               string
 	TypeImports         []FrontendImportView
@@ -156,6 +167,10 @@ type FrontendImportView struct {
 }
 
 type FrontendFormView struct {
+	HasEnumFields bool
+
+	Enums []FrontendEnumView
+
 	Enabled           bool
 	Columns           int
 	CreateTitle       string
@@ -188,6 +203,8 @@ type FrontendComponentImportView struct {
 }
 
 type FrontendListView struct {
+	Enums []FrontendEnumView
+
 	Enabled             bool
 	PageSize            int
 	EditMode            string
@@ -207,6 +224,13 @@ type FrontendListReferenceImportView struct {
 }
 
 type FrontendListColumnView struct {
+	EnumDefinition   *FrontendEnumView
+	EditorProps      []FrontendPropertyView
+	Searchable       *bool
+	SearchField      string
+	SearchDataType   string
+	SearchOperations []string
+
 	Field          FieldView
 	Label          string
 	Width          string
@@ -324,6 +348,15 @@ type RoutesView struct {
 }
 
 func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
+	normalized, err := resolveObjectEnums(spec, spec.enumRegistry)
+	if err != nil {
+		return ObjectView{}, err
+	}
+	spec = normalized
+	if err := validateFrontendEnumDefinitions(spec, cfg.FrontendEnabled || spec.Frontend.Scaffold); err != nil {
+		return ObjectView{}, err
+	}
+
 	if err := spec.Validate(); err != nil {
 		return ObjectView{}, err
 	}
@@ -607,6 +640,11 @@ func BuildKeyView(cfg Config, key KeySpec, field FieldSpec) (KeyView, error) {
 		}),
 	}
 
+	if field.enumDefinition != nil {
+		enum := buildFrontendEnum(*field.enumDefinition)
+		view.EnumDefinition = &enum
+	}
+
 	switch keyField.Type {
 	case "string", "text", "enum", "password":
 		view.IsString = true
@@ -707,6 +745,12 @@ func BuildFieldView(cfg Config, field FieldSpec, inlinePrimaryKey bool) (FieldVi
 		}
 	}
 
+	if field.enumDefinition != nil {
+		enum := buildFrontendEnum(*field.enumDefinition)
+		view.EnumDefinition = &enum
+		view.EnumDefault, _ = enumDefaultValue(field)
+	}
+
 	view.SQLLine = sqlLineFor(field, sqlType, inlinePrimaryKey)
 
 	return view, nil
@@ -749,6 +793,9 @@ func goTypeFor(field FieldSpec) (string, error) {
 }
 
 func tsTypeFor(field FieldSpec) string {
+	if field.enumDefinition != nil {
+		return frontendEnumFieldType(field)
+	}
 	base := "unknown"
 	switch field.Type {
 	case "int", "bigint", "float", "numeric":
@@ -773,6 +820,9 @@ func tsTypeFor(field FieldSpec) string {
 }
 
 func tsDTOTypeFor(field FieldSpec) string {
+	if field.enumDefinition != nil {
+		return frontendEnumFieldType(field)
+	}
 	base := "unknown"
 	switch field.Type {
 	case "int", "bigint", "float", "numeric":
@@ -873,6 +923,10 @@ func valibotFor(field FieldSpec, dto bool) string {
 }
 
 func validatorFor(field FieldSpec) string {
+	if field.enumDefinition != nil {
+		return field.enumDefinition.FrontendName + "Schema"
+	}
+
 	switch field.Type {
 	case "int", "bigint":
 		if field.PrimaryKey || field.References != nil || field.Name == "id" || strings.HasSuffix(field.Name, "_id") {

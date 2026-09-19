@@ -9,6 +9,9 @@ import (
 )
 
 type ObjectSpec struct {
+	Enums        []EnumSpec `yaml:"enums"`
+	enumRegistry map[string]EnumSpec
+
 	SourceFile        string               `yaml:"-"`
 	Name              string               `yaml:"name"`
 	Comment           string               `yaml:"comment"`
@@ -57,6 +60,9 @@ type KeySpec struct {
 }
 
 type FieldSpec struct {
+	FrontendDefault *string `yaml:"frontendDefault"`
+	enumDefinition  *EnumSpec
+
 	Name            string         `yaml:"name"`
 	Type            string         `yaml:"type"`
 	SQLType         string         `yaml:"sqlType"`
@@ -146,6 +152,13 @@ type FrontendListSpec struct {
 }
 
 type FrontendListColumnSpec struct {
+	Format           string         `yaml:"format"`
+	Searchable       *bool          `yaml:"searchable"`
+	SearchField      string         `yaml:"searchField"`
+	SearchDataType   string         `yaml:"searchDataType"`
+	SearchOperations []string       `yaml:"searchOperations"`
+	EditorProps      map[string]any `yaml:"editorProps"`
+
 	Field     string                     `yaml:"field"`
 	Label     string                     `yaml:"label"`
 	Width     string                     `yaml:"width"`
@@ -287,6 +300,12 @@ type TestSpec struct {
 }
 
 func (s ObjectSpec) Validate() error {
+	normalized, err := resolveObjectEnums(s, s.enumRegistry)
+	if err != nil {
+		return err
+	}
+	s = normalized
+
 	if strings.TrimSpace(s.Name) == "" {
 		return fmt.Errorf("name is required")
 	}
@@ -765,9 +784,12 @@ func validateFrontendSpec(spec ObjectSpec, fields map[string]FieldSpec) error {
 		seenColumns[name] = struct{}{}
 		dataType := strings.TrimSpace(item.DataType)
 		switch dataType {
-		case "", "string", "number", "boolean", "date", "datetime", "reference":
+		case "", "string", "number", "boolean", "date", "datetime", "reference", "enum":
 		default:
 			return fmt.Errorf("frontend list column %s has unsupported dataType %q", name, item.DataType)
+		}
+		if err := validateEnumColumnSpec(item, listFields); err != nil {
+			return err
 		}
 		if item.Reference != nil {
 			referenceName := strings.TrimSpace(item.Reference.Name)
