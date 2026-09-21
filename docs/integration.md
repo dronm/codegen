@@ -136,6 +136,27 @@ src/locales/ru.gen.json
 
 The application should merge/import those generated registries from its hand-written router and i18n bootstrap. The exact bootstrap remains application-owned.
 
+### Enum columns
+
+For generated enum collection columns, the frontend must declare an enum-capable
+`@katren/vue-collection-lib` version, for example `^0.1.10`. Codegen validates the
+minimum only for enum-column consumers and never rewrites their `package.json`
+or lockfile. See [Frontend enums](frontend-enums.md) for local dependency support.
+
+Commit `src/types/enums/*.gen.ts`, `src/schemas/enums/*.gen.ts`, and
+`.codegen/frontend-enums.json` under the frontend root. The manifest enables
+scoped stale enum cleanup and `codegen check`. Enum labels are included in the
+same `ru.gen.json` that the application already imports.
+
+Defined enums now generate Go types and automatic modelbind registration. Commit
+`internal/models/*.enum.gen.go`, `internal/models/enums_registry.gen.go`, and
+`.codegen/backend-enums.json` under the backend root. Existing manual enum types
+must opt out with `backend.generation: manual`. If startup replaces the entire
+`metadata.Enums` map, call `models.RegisterGeneratedModelbindEnums()` afterward,
+before metadata parsing or concurrent requests. Initial PostgreSQL enum migrations
+are opt-in and never migrate existing columns automatically. See
+[Backend enums](backend-enums.md) for the full ownership and migration contract.
+
 ## CI
 
 Commit generated files and run:
@@ -159,3 +180,22 @@ and the committed managed generated files. Vue `*List.vue`, `*Form.vue`, and `*E
 ## Vue scaffold ownership migration
 
 On the first `generate` after upgrading from the older generated-Vue ownership model, codegen renames legacy `*Form.gen.vue`, `*List.gen.vue`, and `*EditPage.gen.vue` files to their manually owned names when the destination does not already exist. This preserves any edits. If both names exist, generation fails and requires an explicit choice instead of deleting either file.
+
+
+## Policy-enabled backend integration
+
+For opt-in access models, install the policy-enabled **source snapshots** of
+`modelbind` and `webapp` (or verified equivalent revisions) using application-level
+local replacements. The supplied libraries require Go 1.25.0. Do not assume their
+old published module requirements contain the new APIs.
+
+Construct one `webapp.PolicyRegistry` in handwritten startup, call the generated
+`services.RegisterAccessModels(registry)` with error handling, register explicit
+operation-specific policies, then configure `AppContext.Access` with a trusted
+principal resolver before serving requests. Keep ordinary service registration,
+permissions, and middleware setup. Do not create a controller per model.
+
+[Access-policy integration](access-policies.md) documents the complete YAML,
+startup example, HTTP/JSON ordering, manual-method signatures, native test command,
+and notification boundaries. Commit `.codegen/access.json` along with generated
+backend source so `check` and stale artifact cleanup retain their ownership record.

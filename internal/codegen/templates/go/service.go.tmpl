@@ -27,6 +27,9 @@ import (
 {{- if .ServiceImports.Models }}
 	{{ goQuote (printf "%s/internal/models" .GoModule) }}
 {{- end }}
+{{- range .Access.DecoderImports }}
+	{{ .Name }} {{ goQuote .Path }}
+{{- end }}
 	"github.com/dronm/webapp"
 {{- if .ServiceImports.WebModels }}
 	wmodels "github.com/dronm/webapp/models"
@@ -52,6 +55,9 @@ func Register{{ .Name }}Service() {
 		{{ goQuote .ServiceName }},
 		&{{ .Name }}Service{},
 		New{{ .Name }}Service,
+{{- range .Access.Decoders }}
+		webapp.WithMethodInputDecoder({{ goQuote .Method }}, {{ .Expression }}),
+{{- end }}
 {{- if and .CRUDNotifications (or .CRUD.Create .CRUD.Update .CRUD.Delete) }}
 		webapp.WithCRUDNotifications(),
 {{- end }}

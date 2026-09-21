@@ -1,0 +1,66 @@
+package services
+
+import (
+	"context"
+
+	"github.com/dronm/ds/v4"
+	"github.com/dronm/modelbind"
+	"github.com/dronm/webapp"
+	wmodels "github.com/dronm/webapp/models"
+
+	"example.com/project/internal/models"
+)
+
+// Only the database I/O seam is replaced by a test capture. All policy,
+// decoding, validation, registration and CRUD builder implementations are real.
+var AccessTestConn ds.Conn
+var AccessTestLastCreate modelbind.ModelInput[models.TransportOrder]
+var AccessTestLastUpdate modelbind.ModelInput[*models.TransportOrder]
+
+func (s *TransportOrderService) Create(ctx context.Context, input modelbind.ModelInput[models.TransportOrder]) (map[string]any, error) {
+	AccessTestLastCreate = input
+	if _, err := webapp.InsertModelInputWithConn(ctx, AccessTestConn, modelbind.ModelInput[*models.TransportOrder]{Model: &input.Model, AbsentFields: input.AbsentFields}, nil); err != nil {
+		return nil, err
+	}
+	return map[string]any{"id": input.Model.ID, "customer_id": *input.Model.CustomerID}, nil
+}
+
+// Both value keys and pointer input models are intentional to test exact type
+// arguments, rather than assuming the generator's default all-pointer inputs.
+func (s *TransportOrderService) Update(ctx context.Context, input webapp.UpdateByKeysInput[models.TransportOrderKey, *models.TransportOrder]) (wmodels.RowsAffectedResponse, error) {
+	AccessTestLastUpdate = input.Input
+	rows, err := webapp.UpdateModelInputWithConn(ctx, AccessTestConn, input.Keys, input.Input, nil)
+	return wmodels.RowsAffectedResponse{RowsAffected: rows}, err
+}
+
+func (s *TransportOrderService) Submit(ctx context.Context, input modelbind.ModelInput[*models.TransportOrder]) (int, error) {
+	if _, err := webapp.InsertModelInputWithConn(ctx, AccessTestConn, input, nil); err != nil {
+		return 0, err
+	}
+	return *input.Model.CustomerID, nil
+}
+
+func (s *TransportOrderService) Patch(ctx context.Context, input modelbind.ModelInput[*models.TransportOrder]) error {
+	_, err := webapp.UpdateModelInputWithConn(ctx, AccessTestConn, models.TransportOrderKey{ID: input.Model.ID}, input, nil)
+	return err
+}
+
+func (s *TransportOrderService) Whole(ctx context.Context, input *models.TransportOrder) (int, error) {
+	if _, err := webapp.InsertModelWithConn(ctx, AccessTestConn, input, nil); err != nil {
+		return 0, err
+	}
+	return *input.CustomerID, nil
+}
+
+func (s *TransportOrderService) WholeValue(ctx context.Context, input models.TransportOrder) (int, error) {
+	if _, err := webapp.InsertModelWithConn(ctx, AccessTestConn, &input, nil); err != nil {
+		return 0, err
+	}
+	return *input.CustomerID, nil
+}
+
+func (s *TransportOrderService) ReplaceValue(ctx context.Context, input webapp.UpdateByKeysInput[models.TransportOrderKey, models.TransportOrder]) error {
+	pointerInput := modelbind.ModelInput[*models.TransportOrder]{Model: &input.Input.Model, AbsentFields: input.Input.AbsentFields}
+	_, err := webapp.UpdateModelInputWithConn(ctx, AccessTestConn, input.Keys, pointerInput, nil)
+	return err
+}

@@ -197,6 +197,19 @@ func validateManualBackendCollisions(serverRoot string, objects []ObjectView) er
 			addConflict("service method", methodName, source, object)
 		}
 
+		if object.Access.Enabled {
+			// Protected extensions are checked by symbols rather than filename.
+			// Infrastructure methods remain generator-owned even when CRUD
+			// bodies are manual.
+			for _, method := range []string{"requireDB", "requireSession"} {
+				if method == "requireSession" && !object.SessionRequired {
+					continue
+				}
+				name := object.Name + "Service." + method
+				addConflict("service helper", name, symbols.ServiceMethods[name], object)
+			}
+		}
+
 		httpSymbols := make([]string, 0, 4)
 		if object.HasGeneratedHTTPRoutes {
 			httpSymbols = append(httpSymbols, object.Camel+"Routes")

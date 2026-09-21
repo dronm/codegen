@@ -2,7 +2,7 @@
 
 This document describes ordinary CRUD object schemas from `schemaDir`. Accumulation registers use a separate schema contract and directory; see [Accumulation registers](registers.md).
 
-This document defines the YAML object language consumed by `github.com/dronm/codegen` and the output contract of the built-in Dronm application profile.
+This document defines the YAML object language consumed by `github.com/dronm/codegen` and the output contract of the built-in application profile.
 
 The generator is intentionally aimed at ordinary database-backed CRUD and administrative entities. It generates a coherent unit:
 
@@ -70,7 +70,7 @@ A separate list projection receives its own modules, matching the base-model/lis
 <frontend>/src/schemas/<list-model>.gen.ts
 ```
 
-The YAML files in the configured `schemaDir` are the source of truth for generated registration. Removing a YAML file removes its route/service call from the generated registry on the next run, but does not delete stale generated files.
+The YAML files in the configured `schemaDir` are the source of truth for generated registration. Removing a YAML file removes its route/service call from the generated registry on the next run, but does not delete ordinary stale generated model files. Shared frontend enum artifacts are the exception: their dedicated ownership manifest supports scoped stale-file cleanup; see [Frontend enums](frontend-enums.md).
 
 ### Manual extensions
 
@@ -903,7 +903,8 @@ For inline mode Codegen generates:
 
 Supported generated inline editors are currently:
 
-- string/text/enum/password/time → text editor;
+- string/text/password/time → text editor;
+- enum with a shared definition → enum selector through `dataType: "enum"` and localized `enumOptions` (requires `vue-collection-lib` 0.1.10+);
 - int/bigint/float/numeric → numeric editor;
 - bool → checkbox editor;
 - date → date-only editor through `dataType: "date"`;
@@ -978,33 +979,43 @@ See [`examples/customers_inline.yaml`](../examples/customers_inline.yaml) for a 
 
 ### 8.6 Custom TypeScript and Valibot types
 
-Fields can override their transport/model representation:
+Non-enum fields can override their transport/model representation:
 
 ```yaml
 fields:
-  - name: product_source
-    type: enum
-    tsType: ProductSource
-    tsDtoType: ProductSource
-    valibotDto: ProductSourceSchema
-    valibotModel: ProductSourceSchema
-```
+  - name: supplier
+    type: jsonb
+    tsType: SupplierReference
+    tsDtoType: SupplierReference
+    valibotDto: SupplierReferenceSchema
+    valibotModel: SupplierReferenceSchema
 
-Required imports are declared by surface:
-
-```yaml
 frontend:
   typeImports:
-    - from: "@/types/productEnums"
-      names: [ProductSource]
+    - from: "@/types/reference"
+      names: [SupplierReference]
       typeOnly: true
-
   schemaImports:
-    - from: "@/schemas/enums/productSource"
-      names: [ProductSourceSchema]
+    - from: "@/schemas/reference"
+      names: [SupplierReferenceSchema]
 ```
 
-`valibotDto` and `valibotModel` are complete expressions. Include `v.nullable`, `v.array`, or other wrappers there when a custom expression needs them.
+`valibotDto` and `valibotModel` are complete expressions. Include `v.nullable`,
+`v.array`, or other wrappers when a custom expression needs them.
+
+Declared enum fields now use the shared top-level `enums` definitions rather
+than manually importing a string alias. Codegen automatically infers the enum
+TypeScript type, adds the required imports, and initializes a locale-aware
+picklist schema. Explicit type metadata must agree; explicit validation may wrap
+the generated enum schema but must not replace it with generic string validation.
+
+The field property `frontendDefault` supplies a validated enum string literal
+for inline creation and is inherited by matching enum list/detail projections.
+The column properties `format`, `searchable`, `searchField`, `searchDataType`,
+`searchOperations`, and JSON-compatible `editorProps` preserve explicit overrides.
+See [Frontend enums](frontend-enums.md) for the full YAML syntax, validation,
+nullability/default rules, generated files, dependency check, and database
+ownership boundary.
 
 ### 8.7 Route and locale integration
 
@@ -1113,3 +1124,67 @@ Generation stops before writing object files when a schema is structurally unsaf
 - custom frontend components require explicit imports, and unsupported JSON/writable-date default controls are rejected.
 
 Raw SQL expressions in defaults, checks, expression indexes, and partial-index predicates are intentionally not interpreted. YAML schemas are trusted source code and these expressions still require manual review.
+
+
+## Backend enum generation
+
+Top-level enum definitions now generate Go types, typed constants, `Values()`,
+`IsValid()`, `String()`, and automatic modelbind registration by default. These
+settings belong inside each `enums` entry, not a list column or a field:
+
+```yaml
+backend:
+  generation: managed # managed (default) or manual
+  register: true # defaults to true for managed types, false for manual types
+migration:
+  enabled: false # explicit opt-in to a shared initial CREATE TYPE migration
+  name: create_enum_public_material_status_types # optional
+```
+
+An enum value can specify `goConst` to override its complete generated Go constant
+name. The type and constants are generated once per shared enum definition.
+Manual types and legacy enum fields without definitions remain supported.
+
+See [Backend enums](backend-enums.md) for generated paths, ownership, startup
+integration, collision validation, immutable migrations, and schema evolution.
+[Frontend enums](frontend-enums.md) covers the unchanged frontend contract.
+
+
+## Backend access policies
+
+`access` is an opt-in object section. Its complete contract and validation rules
+are documented in [Access-policy integration](access-policies.md).
+
+```yaml
+access:
+  enabled: true
+  resource: Order
+  bindings:
+    model:
+      rows: {owner: customer_id}
+      writes: {owner: customer_id}
+    list:
+      rows: {owner: customer_id}
+    detail:
+      rows: {owner: customer_id}
+    key:
+      rows: {owner: customer_id}
+```
+
+Omit `resource` to use `name`; explicit empty/null values are invalid. Each distinct
+representation requires explicit row mappings. Only writable base models accept
+write mappings. Omit list/detail bindings when those operations reuse the base
+type, or repeat exactly its rows as an equality assertion. Bindings may name
+columns not selected into models; external relation exposure is the application's
+explicit database contract, not something Codegen infers from SQL.
+
+`list.table.alias` and `detail.table.alias` declare real projection aliases for
+qualified row references such as `o.customer_id`. The base writable table does not
+accept an alias. Write targets remain unqualified columns. SQL expressions are not
+policy mappings.
+
+Optional `access.serviceInputs.<Method>.operation: insert | update` declares
+additional handwritten write methods. Optional `decoder: {name: Function,
+import: package/path}` supplies an application-owned decoder for unsupported input
+shapes; see the guide for manual HTTP ownership and exact signature requirements.
+No policy factories, principals, business role rules, or RLS are generated.

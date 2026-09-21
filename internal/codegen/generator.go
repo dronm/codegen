@@ -25,9 +25,29 @@ func Generate(cfg Config) error {
 	}
 
 	renderer := NewRenderer(cfg)
+	if cfg.BackendEnabled {
+		if err := renderer.RenderBackendEnums(objects); err != nil {
+			return fmt.Errorf("render backend enums: %w", err)
+		}
+	}
+	if cfg.MigrationsEnabled {
+		if err := renderer.RenderBackendEnumMigrations(objects); err != nil {
+			return fmt.Errorf("render enum migrations: %w", err)
+		}
+	}
+	if cfg.FrontendEnabled {
+		if err := renderer.RenderFrontendEnums(objects); err != nil {
+			return fmt.Errorf("render frontend enums: %w", err)
+		}
+	}
 	for _, object := range objects {
 		if err := renderer.RenderObject(object); err != nil {
 			return fmt.Errorf("render object %s: %w", object.Name, err)
+		}
+	}
+	if cfg.BackendEnabled {
+		if err := renderer.RenderAccessModels(objects); err != nil {
+			return fmt.Errorf("render access models: %w", err)
 		}
 	}
 	if cfg.RegistersEnabled && len(registers) > 0 {
@@ -107,6 +127,20 @@ func prepareObjects(cfg Config) ([]ObjectView, error) {
 		objects = append(objects, view)
 	}
 
+	if err := validateAccessObjects(cfg, objects); err != nil {
+		return nil, err
+	}
+	if err := validateBackendEnumObjects(cfg, objects); err != nil {
+		return nil, err
+	}
+	if err := validateEnumNamespaces(objects); err != nil {
+		return nil, err
+	}
+	if cfg.FrontendEnabled {
+		if err := validateEnumCollectionDependency(cfg.FrontendRoot, objects); err != nil {
+			return nil, err
+		}
+	}
 	if err := validateObjectViews(objects); err != nil {
 		return nil, err
 	}
@@ -161,13 +195,18 @@ func LoadObjects(schemaDir string) ([]ObjectSpec, error) {
 		}
 		object.SourceFile = path
 
-		if err := object.Validate(); err != nil {
-			return nil, fmt.Errorf("validate %s: %w", path, err)
-		}
-
 		objects = append(objects, object)
 	}
 
+	objects, err = resolveProjectEnums(objects)
+	if err != nil {
+		return nil, err
+	}
+	for _, object := range objects {
+		if err := object.Validate(); err != nil {
+			return nil, fmt.Errorf("validate %s: %w", object.SourceFile, err)
+		}
+	}
 	sort.Slice(objects, func(i int, j int) bool {
 		return objects[i].Name < objects[j].Name
 	})
@@ -281,6 +320,9 @@ type Renderer struct {
 }
 
 func (r Renderer) RenderObject(model ObjectView) error {
+	if err := validateAccessObjects(r.Config, []ObjectView{model}); err != nil {
+		return err
+	}
 	if r.Config.BackendEnabled && !r.Config.AllowManualCollisions {
 		if err := r.ensureNoManualBackendCollision(model); err != nil {
 			return err
@@ -519,6 +561,14 @@ func (r Renderer) ensureNoManualFrontendCollision(model ObjectView) error {
 }
 
 func (r Renderer) ensureNoManualBackendCollision(model ObjectView) error {
+	if model.Access.Enabled {
+		// Protected services inspect handwritten method signatures and may
+		// intentionally use order.go beside order.gen.go. Check declarations
+		// and method ownership, not filenames. Access-specific model/marker
+		// and managed-output checks still run in validateAccessObjects.
+		return validateManualBackendCollisions(r.Config.ServerRoot, []ObjectView{model})
+	}
+
 	paths := []string{
 		filepath.Join(r.Config.ServerRoot, "internal", "models", model.FileBase+".go"),
 		filepath.Join(r.Config.ServerRoot, "internal", "services", model.FileBase+".go"),
@@ -598,7 +648,7 @@ func (r Renderer) RenderFrontendLocale(objects []ObjectView) error {
 		TargetPath:   filepath.Join(r.Config.FrontendRoot, "src", "locales", "ru.gen.json"),
 		Format:       FormatNone,
 	}
-	return r.renderFile(job, RoutesView{Objects: frontendObjects})
+	return r.renderFile(job, FrontendLocaleView{Objects: frontendObjects, Enums: collectFrontendEnums(objects)})
 }
 
 func (r Renderer) RenderRegisters(registers []RegisterView) error {

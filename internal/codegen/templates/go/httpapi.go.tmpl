@@ -32,7 +32,11 @@ func {{ .Camel }}Routes(api *webapp.Group) {
 		webapp.WithPermission({{ goQuote (printf "%s.create" .PermissionPrefix) }}),
 {{- end }}
 		webapp.WithService({{ goQuote .ServiceName }}, "Create"),
+		{{- if .Access.Enabled }}
+		webapp.WithBinder({{ .Access.CreateBinder }}),
+{{- else }}
 		webapp.WithBinder(webapp.InsertInputBinder[*models.{{ .Name }}]()),
+{{- end }}
 		webapp.WithSuccessCode(http.StatusCreated),
 	)
 {{- end }}
@@ -75,7 +79,9 @@ func {{ .Camel }}Routes(api *webapp.Group) {
 		webapp.WithPermission({{ goQuote (printf "%s.update" .PermissionPrefix) }}),
 {{- end }}
 		webapp.WithService({{ goQuote .ServiceName }}, "Update"),
-{{- if .CompositeKey }}
+{{- if .Access.Enabled }}
+		webapp.WithBinder({{ .Camel }}AccessUpdateBinder()),
+{{- else if .CompositeKey }}
 		webapp.WithBinder({{ .Camel }}UpdateBinder()),
 {{- else }}
 {{- range .Keys }}
@@ -111,7 +117,7 @@ func {{ .Camel }}KeyBinder() webapp.Binder {
 	}
 }
 {{- end }}
-{{- if and .CompositeKey .GeneratedHTTPCRUD.Update }}
+{{- if and .CompositeKey .GeneratedHTTPCRUD.Update (not .Access.Enabled) }}
 
 func {{ .Camel }}UpdateBinder() webapp.Binder {
 	return func(r *http.Request) (any, error) {

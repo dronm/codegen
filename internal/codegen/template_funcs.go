@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 )
@@ -24,6 +25,7 @@ func TemplateFuncs() map[string]any {
 		"sqlQuote":                   sqlQuote,
 		"sqlNullableText":            sqlNullableText,
 		"goQuote":                    strconv.Quote,
+		"jsonString":                 jsonString,
 	}
 }
 
@@ -144,4 +146,11 @@ func sqlNullableText(value *string) string {
 		return "NULL"
 	}
 	return sqlQuote(strings.TrimSpace(*value))
+}
+
+// jsonString emits a quoted string valid in both JSON and TypeScript, including
+// control characters that strconv.Quote may render with Go-only escapes.
+func jsonString(value string) string {
+	encoded, _ := json.Marshal(value)
+	return string(encoded)
 }

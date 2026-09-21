@@ -8,6 +8,8 @@ import (
 )
 
 type ObjectView struct {
+	Access                 AccessView
+	BackendEnums           []BackendEnumView
 	SourceFile             string
 	Name                   string
 	Camel                  string
@@ -79,6 +81,8 @@ type ObjectView struct {
 }
 
 type KeyView struct {
+	EnumDefinition *FrontendEnumView
+
 	Name          string
 	Pascal        string
 	Camel         string
@@ -96,6 +100,9 @@ type KeyView struct {
 }
 
 type FieldView struct {
+	EnumDefinition *FrontendEnumView
+	EnumDefault    *string
+
 	Name            string
 	Type            string
 	JSONName        string
@@ -130,6 +137,12 @@ type FieldView struct {
 }
 
 type FrontendView struct {
+	HasEnumKeys bool
+
+	Enums       []FrontendEnumView
+	DetailEnums []FrontendEnumView
+	ListEnums   []FrontendEnumView
+
 	Scaffold            bool
 	Title               string
 	TypeImports         []FrontendImportView
@@ -156,6 +169,10 @@ type FrontendImportView struct {
 }
 
 type FrontendFormView struct {
+	HasEnumFields bool
+
+	Enums []FrontendEnumView
+
 	Enabled           bool
 	Columns           int
 	CreateTitle       string
@@ -188,6 +205,8 @@ type FrontendComponentImportView struct {
 }
 
 type FrontendListView struct {
+	Enums []FrontendEnumView
+
 	Enabled             bool
 	PageSize            int
 	EditMode            string
@@ -207,6 +226,13 @@ type FrontendListReferenceImportView struct {
 }
 
 type FrontendListColumnView struct {
+	EnumDefinition   *FrontendEnumView
+	EditorProps      []FrontendPropertyView
+	Searchable       *bool
+	SearchField      string
+	SearchDataType   string
+	SearchOperations []string
+
 	Field          FieldView
 	Label          string
 	Width          string
@@ -324,6 +350,15 @@ type RoutesView struct {
 }
 
 func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
+	normalized, err := resolveObjectEnums(spec, spec.enumRegistry)
+	if err != nil {
+		return ObjectView{}, err
+	}
+	spec = normalized
+	if err := validateFrontendEnumDefinitions(spec, cfg.FrontendEnabled || spec.Frontend.Scaffold); err != nil {
+		return ObjectView{}, err
+	}
+
 	if err := spec.Validate(); err != nil {
 		return ObjectView{}, err
 	}
@@ -383,6 +418,7 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 		GoModule:           cfg.GoModule,
 		CompositeKey:       len(spec.Keys) > 1,
 	}
+	view.BackendEnums = backendEnumsForObject(spec)
 	view.GeneratedServiceCRUD = generatedCRUD(view.CRUD, view.ManualServiceCRUD)
 	if view.HTTPRoutesEnabled {
 		view.GeneratedHTTPCRUD = generatedCRUD(view.CRUD, view.ManualHTTPCRUD)
@@ -450,7 +486,7 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 		view.ListModelName = PascalCase(spec.List.Model)
 		view.ListCamel = CamelCase(view.ListModelName)
 		view.ListFileBase = CamelCase(view.ListModelName)
-		view.ListRelation = relationName(schemaOrPublic(spec.List.Table.Schema), spec.List.Table.Name)
+		view.ListRelation = projectionRelation(spec.List.Table)
 		view.ListComment = oneLineText(spec.List.Comment)
 		if view.ListComment == "" {
 			view.ListComment = view.ListModelName + " is the collection projection for " + view.HumanPlural + "."
@@ -484,7 +520,7 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 		view.DetailModelName = PascalCase(spec.Detail.Model)
 		view.DetailCamel = CamelCase(view.DetailModelName)
 		view.DetailFileBase = CamelCase(view.DetailModelName)
-		view.DetailRelation = relationName(schemaOrPublic(spec.Detail.Table.Schema), spec.Detail.Table.Name)
+		view.DetailRelation = projectionRelation(spec.Detail.Table)
 		view.DetailComment = oneLineText(spec.Detail.Comment)
 		if view.DetailComment == "" {
 			view.DetailComment = view.DetailModelName + " is the detail projection for " + view.HumanPlural + "."
@@ -542,6 +578,10 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 	view.Menu = buildMenuView(spec.Menu)
 	view.Migration = buildMigrationView(view, spec)
 	view.Test = BuildTestView(spec.Test, view.Keys)
+	view.Access, err = buildAccessView(cfg, spec, view)
+	if err != nil {
+		return ObjectView{}, err
+	}
 	view.ServiceImports = buildServiceImports(view)
 	view.HTTPImports = buildHTTPImports(view)
 	view.Frontend = buildFrontendView(spec, view)
@@ -605,6 +645,11 @@ func BuildKeyView(cfg Config, key KeySpec, field FieldSpec) (KeyView, error) {
 			{Name: "primaryKey", Value: "true"},
 			{Name: "required", Value: "true"},
 		}),
+	}
+
+	if field.enumDefinition != nil {
+		enum := buildFrontendEnum(*field.enumDefinition)
+		view.EnumDefinition = &enum
 	}
 
 	switch keyField.Type {
@@ -707,6 +752,12 @@ func BuildFieldView(cfg Config, field FieldSpec, inlinePrimaryKey bool) (FieldVi
 		}
 	}
 
+	if field.enumDefinition != nil {
+		enum := buildFrontendEnum(*field.enumDefinition)
+		view.EnumDefinition = &enum
+		view.EnumDefault, _ = enumDefaultValue(field)
+	}
+
 	view.SQLLine = sqlLineFor(field, sqlType, inlinePrimaryKey)
 
 	return view, nil
@@ -749,6 +800,9 @@ func goTypeFor(field FieldSpec) (string, error) {
 }
 
 func tsTypeFor(field FieldSpec) string {
+	if field.enumDefinition != nil {
+		return frontendEnumFieldType(field)
+	}
 	base := "unknown"
 	switch field.Type {
 	case "int", "bigint", "float", "numeric":
@@ -773,6 +827,9 @@ func tsTypeFor(field FieldSpec) string {
 }
 
 func tsDTOTypeFor(field FieldSpec) string {
+	if field.enumDefinition != nil {
+		return frontendEnumFieldType(field)
+	}
 	base := "unknown"
 	switch field.Type {
 	case "int", "bigint", "float", "numeric":
@@ -873,6 +930,10 @@ func valibotFor(field FieldSpec, dto bool) string {
 }
 
 func validatorFor(field FieldSpec) string {
+	if field.enumDefinition != nil {
+		return field.enumDefinition.FrontendName + "Schema"
+	}
+
 	switch field.Type {
 	case "int", "bigint":
 		if field.PrimaryKey || field.References != nil || field.Name == "id" || strings.HasSuffix(field.Name, "_id") {
@@ -1234,7 +1295,7 @@ func buildServiceImports(view ObjectView) ServiceImportView {
 		Errors:    crud.Detail,
 		Fmt:       anyCRUD,
 		Modelbind: crud.Create || crud.List,
-		Models:    anyCRUD,
+		Models:    anyCRUD || view.Access.NeedsModelsImport,
 		Types:     crud.Delete,
 		Session:   true,
 		AppErrors: view.SessionRequired,
@@ -1270,8 +1331,8 @@ func buildHTTPImports(view ObjectView) HTTPImportView {
 		Fmt:       compositeUsesBinder,
 		HTTP:      crud.Create || compositeUsesBinder,
 		Strconv:   compositeUsesBinder && hasNumericCompositeKey,
-		Modelbind: view.CompositeKey && crud.Update,
-		Models:    crud.Create || crud.Update || (view.CompositeKey && (crud.Detail || crud.Delete)),
+		Modelbind: view.CompositeKey && crud.Update && !view.Access.Enabled,
+		Models:    (crud.Create && !view.Access.CreateValue) || (crud.Update && !view.Access.Enabled) || compositeUsesBinder,
 		Webapp:    view.HasGeneratedHTTPRoutes,
 	}
 }
@@ -1308,4 +1369,12 @@ func pluralHumanName(value string) string {
 
 func oneLineText(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+func projectionRelation(table TableSpec) string {
+	relation := relationName(schemaOrPublic(table.Schema), table.Name)
+	if table.Alias != "" {
+		relation += " AS " + table.Alias
+	}
+	return relation
 }

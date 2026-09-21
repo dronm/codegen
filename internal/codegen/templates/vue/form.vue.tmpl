@@ -15,7 +15,12 @@ import {
 	create{{ .Name }}FormModel,
 	type {{ .Name }}FormModel,
 } from "@/forms/{{ .FileBase }}.gen";
+{{- if not .Frontend.Form.HasEnumFields }}
 import type { {{ .Name }}New } from "@/types/{{ .FileBase }}.gen";
+{{- end }}
+{{- range .Frontend.Form.Enums }}
+import { {{ .ValuesName }} } from "@/types/enums/{{ .FileBase }}.gen";
+{{- end }}
 
 type FormMode = "create" | "edit" | "copy";
 
@@ -32,7 +37,7 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-	submit: [model: {{ .Name }}New];
+	submit: [model: {{ .Name }}{{ if .Frontend.Form.HasEnumFields }}FormModel{{ else }}New{{ end }}];
 	cancel: [];
 }>();
 
@@ -55,7 +60,7 @@ const nullableText = (value: string | null | undefined): string | null => {
 {{- end }}
 
 const submit = (): void => {
-	const model: {{ .Name }}New = {
+	const model: {{ .Name }}{{ if .Frontend.Form.HasEnumFields }}FormModel{{ else }}New{{ end }} = {
 {{- range .FrontendCreateFields }}
 		{{ .TSName }}: {{ frontendSubmitExpression . }},
 {{- end }}
@@ -84,7 +89,18 @@ const submit = (): void => {
 				containerClass="{{ frontendColumnSpanClass .ColumnSpan }}{{ if eq .Component "Checkbox" }} pt-7{{ end }}"
 				v-slot="{ invalid, error }"
 			>
-{{- if eq .Component "Checkbox" }}
+{{- if and .Field.EnumDefinition (eq .Component "Select") }}
+				<Select
+					v-model="form.{{ .Field.TSName }}"
+					inputId="{{ .ID }}"
+					:options="{{ .Field.EnumDefinition.ValuesName }}.map((value) => ({ value, label: t(`{{ .Field.EnumDefinition.FrontendName }}.${value}`) }))"
+					optionLabel="label"
+					optionValue="value"
+					:showClear="{{ .Field.Nullable }}"
+					:invalid="invalid"
+					:disabled="{{ .DisableExpression }}"
+				/>
+{{- else if eq .Component "Checkbox" }}
 				<div class="flex items-center gap-2">
 					<Checkbox
 						v-model="form.{{ .Field.TSName }}"

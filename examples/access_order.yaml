@@ -1,0 +1,100 @@
+# Generated metadata only; see examples/access/bootstrap.go.txt for handwritten policies.
+name: Order
+comment: Order belongs to an application-resolved customer.
+humanName: order
+humanNamePlural: orders
+
+table:
+  schema: public
+  name: orders
+
+route: /orders
+permissionPrefix: order
+serviceName: Order
+sessionRequired: true
+crudNotifications: true
+
+keys:
+  - name: id
+    pathName: id
+    type: int
+
+fields:
+  - name: id
+    type: int
+    primaryKey: true
+    autoIncrement: true
+    serverGenerated: true
+  - name: customer_id
+    type: int
+    required: true
+    dbRequired: true
+    comment: Still an ordinary required field; policy supplies its effective insert value.
+  - name: name
+    type: text
+    required: true
+
+# The owner column is deliberately not returned. These projections select from
+# the actual base table and declare their aliases; no external view is assumed.
+list:
+  model: OrderSummary
+  table:
+    schema: public
+    name: orders
+    alias: o
+  fields:
+    - name: id
+      type: int
+      primaryKey: true
+    - name: name
+      type: text
+      required: true
+
+detail:
+  model: OrderDetail
+  table:
+    schema: public
+    name: orders
+    alias: d
+  fields:
+    - name: id
+      type: int
+      primaryKey: true
+    - name: name
+      type: text
+      required: true
+
+access:
+  enabled: true
+  # Omit resource to use name: Order.
+  bindings:
+    model:
+      rows: {owner: customer_id}
+      writes: {owner: customer_id}
+    list:
+      rows: {owner: o.customer_id}
+    detail:
+      rows: {owner: d.customer_id}
+    key:
+      rows: {owner: customer_id}
+
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+permissions:
+  enabled: true
+  grantRoles:
+    - customer
+
+frontend:
+  scaffold: false
+
+migration:
+  enabled: true
+
+test:
+  enabled: false

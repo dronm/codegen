@@ -58,7 +58,7 @@ const {{ .Camel }}CrudApi = createCrudApi<
 >({
 	basePath,
 	serviceName: "{{ .ServiceName }}",
-	getKeyValue: (key: {{ .Name }}Key): {{ frontendKeyValueType .FrontendKeys }} => {
+	getKeyValue: (key: {{ .Name }}Key): {{ if and .Frontend.HasEnumKeys (not .CompositeKey) }}{{ .Name }}Key["{{ (index .FrontendKeys 0).TSName }}"]{{ else }}{{ frontendKeyValueType .FrontendKeys }}{{ end }} => {
 		return {{ frontendKeyValueExpression .FrontendKeys }};
 	},
 	fromListDTO: {{ if .HasCustomList }}{{ .ListCamel }}FromDTO{{ else }}{{ .Camel }}FromDTO{{ end }},

@@ -1,0 +1,408 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/dronm/ds/v4"
+	"github.com/dronm/modelbind"
+	"github.com/dronm/modelbind/access"
+	"github.com/dronm/modelbind/pg"
+	"github.com/dronm/modelbind/types"
+	"github.com/dronm/session"
+	"github.com/dronm/webapp"
+
+	"example.com/project/internal/models"
+	"example.com/project/internal/services"
+)
+
+type captureConn struct {
+	ds.Conn
+	queries []string
+	params  [][]any
+}
+type captureResult struct{ ds.ExecResult }
+
+func (captureResult) RowsAffected() int64 { return 1 }
+func (c *captureConn) Exec(_ context.Context, sql string, args ...any) (ds.ExecResult, error) {
+	c.queries = append(c.queries, sql)
+	c.params = append(c.params, append([]any(nil), args...))
+	return captureResult{}, nil
+}
+
+type publisher struct{ ordinary, scoped int }
+
+func (p *publisher) PublishEvent(string, string, any) error { p.ordinary++; return nil }
+
+type scopedPublisher struct{ publisher }
+
+func (p *scopedPublisher) PublishAccessEvent(context.Context, webapp.Principal, string, webapp.ServiceMethodEvent) error {
+	p.scoped++
+	return nil
+}
+
+var registerOnce sync.Once
+
+func controller(t *testing.T) *webapp.AccessController {
+	t.Helper()
+	r := webapp.NewPolicyRegistry()
+	if err := services.RegisterAccessModels(r); err != nil {
+		t.Fatal(err)
+	}
+	for _, resource := range []string{"Order", "TransportOrder", "OrderLine", "HiddenOrder"} {
+		for _, operation := range []access.Operation{access.Read, access.Insert, access.Update, access.Delete} {
+			if err := r.RegisterRole("customer", resource, operation, func(_ context.Context, p webapp.Principal) (access.Policy, error) {
+				owner := p.Claims["customer_id"]
+				if operation == access.Insert {
+					return access.ForInsert(access.WriteRules{"owner": access.Enforce(owner)}), nil
+				}
+				policy := access.Scope(access.Eq("owner", owner))
+				if operation == access.Update {
+					policy.Writes = access.WriteRules{"owner": access.Enforce(owner)}
+				}
+				return policy, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return &webapp.AccessController{Registry: r, ResolvePrincipal: func(context.Context, session.Session) (webapp.Principal, error) {
+		return webapp.Principal{UserID: "7", Roles: []string{"customer"}, Claims: map[string]any{"customer_id": int64(42)}}, nil
+	}}
+}
+func scopedContext(t *testing.T) context.Context {
+	t.Helper()
+	return webapp.ContextWithAccess(context.Background(), controller(t))
+}
+func setup(t *testing.T) (*captureConn, *webapp.AccessController, http.Handler) {
+	t.Helper()
+	registerOnce.Do(services.RegisterGeneratedServices)
+	conn := &captureConn{}
+	services.AccessTestConn = conn
+	c := controller(t)
+	routes := []webapp.Route{}
+	group := webapp.NewGroup("", &routes)
+	registerGeneratedRoutes(&group)
+	return conn, c, webapp.MustBuildRouter(&webapp.AppContext{Access: c}, routes)
+}
+func request(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, r)
+	return response
+}
+
+func TestGeneratedMarkersAndExplicitBindings(t *testing.T) {
+	c := controller(t)
+	ctx := webapp.ContextWithAccess(context.Background(), c)
+	for _, model := range []types.DBModel{models.Order{}, &models.Order{}, models.OrderOverview{}, &models.OrderOverview{}, models.OrderDetails{}, &models.OrderDetails{}, models.OrderKey{}, &models.OrderKey{}} {
+		if model.(types.AccessScopedModel).AccessResource() != "Order" {
+			t.Fatal(model)
+		}
+		resolved, err := webapp.ResolveModelAccess(ctx, model, access.Read)
+		if err != nil || !resolved.Applied {
+			t.Fatal(model, err)
+		}
+		expected := "customer_id"
+		if model.Relation() == "public.orders AS o" {
+			expected = "o.customer_id"
+		}
+		if resolved.Binding.Rows["owner"] != expected {
+			t.Fatal(resolved.Binding)
+		}
+		if _, base := model.(models.Order); !base {
+			if _, basePointer := model.(*models.Order); !basePointer && len(resolved.Binding.Writes) != 0 {
+				t.Fatal("readonly write binding", model)
+			}
+		}
+	}
+	for _, key := range []types.DBModel{models.OrderLineKey{}, &models.OrderLineKey{}} {
+		if _, err := webapp.ResolveModelAccess(ctx, key, access.Delete); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := services.RegisterAccessModels(c.Registry); err == nil || !strings.Contains(err.Error(), "resource") {
+		t.Fatal("duplicate registration was not reported", err)
+	}
+	if err := services.RegisterAccessModels(nil); !errors.Is(err, webapp.ErrAccessConfiguration) {
+		t.Fatal(err)
+	}
+}
+
+func TestGeneratedHTTPRequiredOwnershipBeforeValidation(t *testing.T) {
+	conn, _, handler := setup(t)
+	response := request(handler, http.MethodPost, "/transport-orders", `{"id":1,"name":"created"}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("%d: %s", response.Code, response.Body.String())
+	}
+	input := services.AccessTestLastCreate
+	if input.Model.CustomerID == nil || *input.Model.CustomerID != 42 || !input.IsPresent("customer_id") {
+		t.Fatalf("ineffective policy input: %+v", input)
+	}
+	if len(conn.queries) != 1 || !strings.Contains(conn.queries[0], "customer_id") {
+		t.Fatal(conn.queries)
+	}
+	for _, body := range []string{`{"id":1,"name":"created","customer_id":99}`, `{"id":1,"name":"created","customer_id":null}`, `{"id":1,"name":"created","customer_id":0}`} {
+		response = request(handler, http.MethodPost, "/transport-orders", body)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("%s -> %d %s", body, response.Code, response.Body.String())
+		}
+	}
+	response = request(handler, http.MethodPost, "/transport-orders", `{"id":1}`)
+	if response.Code != http.StatusBadRequest || len(conn.queries) != 1 {
+		t.Fatal(response.Code, conn.queries)
+	}
+	// Preparing effective input never mutates the original typed body/absence.
+	original, err := modelbind.DecodeJSONBodyInput[*models.Order](strings.NewReader(`{"id":1,"name":"new"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := webapp.PrepareAccessInput(scopedContext(t), original, access.Insert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.Model.CustomerID != nil || !original.IsAbsent("customer_id") || !effective.IsPresent("customer_id") {
+		t.Fatal("presence mutation")
+	}
+}
+
+func TestGeneratedPathUpdatePreservesZeroNullAndAbsence(t *testing.T) {
+	conn, _, handler := setup(t)
+	response := request(handler, http.MethodPatch, "/transport-orders/5", `{"name":"changed","priority":0,"note":null}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("%d %s", response.Code, response.Body.String())
+	}
+	input := services.AccessTestLastUpdate
+	if !input.IsAbsent("customer_id") || !input.IsPresent("priority") || input.Model.Priority != 0 || !input.IsPresent("note") || input.Model.Note != nil {
+		t.Fatalf("bad update presence: %+v", input)
+	}
+	if len(conn.queries) != 1 {
+		t.Fatal(conn.queries)
+	}
+	sql := conn.queries[0]
+	where := strings.Index(sql, " WHERE ")
+	if where < 0 || strings.Contains(sql[:where], "customer_id") || !strings.Contains(sql[where:], "customer_id") || !strings.Contains(sql[where:], "id =") {
+		t.Fatal(sql)
+	}
+	for _, body := range []string{`{"customer_id":null}`, `{"customer_id":99}`} {
+		response = request(handler, http.MethodPatch, "/transport-orders/5", body)
+		if response.Code != http.StatusForbidden {
+			t.Fatal(response.Code, response.Body.String())
+		}
+	}
+	if len(conn.queries) != 1 {
+		t.Fatal("rejected update executed SQL")
+	}
+	// Key validation cannot be supplied or bypassed by a row policy.
+	r := httptest.NewRequest(http.MethodPatch, "/transport-orders/", strings.NewReader(`{"name":"bad"}`)).WithContext(scopedContext(t))
+	r.Header.Set("Content-Type", "application/json")
+	if _, err := transportOrderAccessUpdateBinder()(r); err == nil {
+		t.Fatal("missing path key accepted")
+	}
+	r.SetPathValue("orderID", "0")
+	if _, err := transportOrderAccessUpdateBinder()(r); err == nil {
+		t.Fatal("zero path key accepted")
+	}
+}
+
+func TestGeneratedCompositePathBinder(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPatch, "/order-lines/2/3", strings.NewReader(`{"name":"changed"}`)).WithContext(scopedContext(t))
+	r.Header.Set("Content-Type", "application/json")
+	r.SetPathValue("document", "2")
+	r.SetPathValue("line", "3")
+	decoded, err := orderLineAccessUpdateBinder()(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := decoded.(webapp.UpdateByKeysInput[*models.OrderLineKey, *models.OrderLine])
+	if input.Keys.DocumentID != 2 || input.Keys.LineNum != 3 || !input.Input.IsAbsent("customer_id") {
+		t.Fatal(input)
+	}
+	r = httptest.NewRequest(http.MethodPatch, "/order-lines/2", strings.NewReader(`{"name":"bad"}`)).WithContext(scopedContext(t))
+	r.Header.Set("Content-Type", "application/json")
+	r.SetPathValue("document", "2")
+	if _, err := orderLineAccessUpdateBinder()(r); err == nil {
+		t.Fatal("partial composite path accepted")
+	}
+}
+
+func TestGeneratedJSONDecodersMatchHandwrittenAndGeneratedSignatures(t *testing.T) {
+	conn, c, _ := setup(t)
+	ctx := webapp.ContextWithAccess(context.Background(), c)
+	for _, tc := range []struct {
+		method, body string
+		expected     any
+	}{
+		{"Create", `{"id":1,"name":"created"}`, modelbind.ModelInput[models.TransportOrder]{}},
+		{"Update", `{"keys":{"id":1},"input":{"name":"patched","priority":0,"note":null}}`, webapp.UpdateByKeysInput[models.TransportOrderKey, *models.TransportOrder]{}},
+		{"Submit", `{"id":1,"name":"created"}`, modelbind.ModelInput[*models.TransportOrder]{}},
+		{"Patch", `{"id":1,"name":"patched"}`, modelbind.ModelInput[*models.TransportOrder]{}},
+		{"Whole", `{"id":1,"name":"created"}`, (*models.TransportOrder)(nil)},
+		{"WholeValue", `{"id":1,"name":"created"}`, models.TransportOrder{}},
+		{"ReplaceValue", `{"keys":{"id":1},"input":{"name":"patched"}}`, webapp.UpdateByKeysInput[models.TransportOrderKey, models.TransportOrder]{}},
+	} {
+		input, err := webapp.DecodeInputForServiceContext(ctx, "TransportOrder", tc.method, json.RawMessage(tc.body))
+		if err != nil || reflect.TypeOf(input) != reflect.TypeOf(tc.expected) {
+			t.Fatalf("%s: %T %v", tc.method, input, err)
+		}
+		if _, err := webapp.CallServiceJSON(context.Background(), "TransportOrder", tc.method, json.RawMessage(tc.body), webapp.ServiceContext{Access: c}); err != nil {
+			t.Fatal(tc.method, err)
+		}
+	}
+	if len(conn.queries) != 7 {
+		t.Fatal(conn.queries)
+	}
+	// Standard generated pointer signatures and composite JSON keys also decode.
+	for _, tc := range []struct {
+		service, method, body string
+		expected              any
+	}{
+		{"Order", "Create", `{"id":1,"name":"created"}`, modelbind.ModelInput[*models.Order]{}},
+		{"Order", "Update", `{"keys":{"id":1},"input":{"name":"changed"}}`, webapp.UpdateByKeysInput[*models.OrderKey, *models.Order]{}},
+		{"OrderLine", "Update", `{"keys":{"document_id":2,"line_num":3},"input":{"name":"changed"}}`, webapp.UpdateByKeysInput[*models.OrderLineKey, *models.OrderLine]{}},
+	} {
+		decoded, err := webapp.DecodeInputForServiceContext(ctx, tc.service, tc.method, json.RawMessage(tc.body))
+		if err != nil || reflect.TypeOf(decoded) != reflect.TypeOf(tc.expected) {
+			t.Fatalf("%s.%s: %T %v", tc.service, tc.method, decoded, err)
+		}
+	}
+	for _, body := range []string{`{"keys":{},"input":{"name":"x"}}`, `{"keys":{"document_id":1},"input":{"name":"x"}}`} {
+		if _, err := webapp.DecodeInputForServiceContext(ctx, "OrderLine", "Update", json.RawMessage(body)); !errors.Is(err, modelbind.ErrMissingKey) {
+			t.Fatal(err)
+		}
+	}
+	for _, body := range []string{`{"Model":{"id":1,"name":"x"},"AbsentFields":{}}`, `{"id":1,"name":"x","customer_id":99,"AbsentFields":{"customer_id":true}}`} {
+		if _, err := webapp.DecodeInputForServiceContext(ctx, "TransportOrder", "Create", json.RawMessage(body)); err == nil {
+			t.Fatal("internal envelope/presence override accepted")
+		}
+	}
+	definition, err := webapp.LookupService("Order")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(definition.InputDecoders) != 2 || definition.InputDecoders["Delete"] != nil || definition.InputDecoders["Detail"] != nil {
+		t.Fatal("read/delete keys classified as write bodies")
+	}
+}
+
+func TestGeneratedServicesFailClosedWithoutAuthorizationContext(t *testing.T) {
+	// A nonnil Provider whose methods panic if touched. Missing authorization
+	// must be caught by the real helper before asking for a DB connection.
+	s := services.OrderService{DB: struct{ ds.Provider }{}}
+	owner := 42
+	body := modelbind.ModelInput[*models.Order]{Model: &models.Order{ID: 1, CustomerID: &owner, Name: "x"}}
+	checks := []func() error{
+		func() error { _, err := s.Create(context.Background(), body); return err },
+		func() error {
+			_, err := s.Update(context.Background(), webapp.UpdateByKeysInput[*models.OrderKey, *models.Order]{Keys: &models.OrderKey{ID: 1}, Input: body})
+			return err
+		},
+		func() error { _, err := s.Delete(context.Background(), 1); return err },
+		func() error { _, err := s.Detail(context.Background(), 1); return err },
+		func() error { _, err := s.List(context.Background(), modelbind.CollectionParams{}); return err },
+	}
+	for _, check := range checks {
+		if err := check(); !errors.Is(err, webapp.ErrAccessConfiguration) {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestGeneratedMissingIdentityRegistrationOrPolicyDeniesBeforeSQL(t *testing.T) {
+	conn, c, _ := setup(t)
+	for _, tc := range []struct {
+		name    string
+		control *webapp.AccessController
+		want    int
+	}{
+		{"missing controller", nil, http.StatusInternalServerError},
+		{"missing principal", &webapp.AccessController{Registry: c.Registry}, http.StatusUnauthorized},
+		{"missing registration", &webapp.AccessController{Registry: webapp.NewPolicyRegistry(), ResolvePrincipal: c.ResolvePrincipal}, http.StatusInternalServerError},
+		{"no applicable role", &webapp.AccessController{Registry: c.Registry, ResolvePrincipal: func(context.Context, session.Session) (webapp.Principal, error) {
+			return webapp.Principal{UserID: "other", Roles: []string{"unassigned"}}, nil
+		}}, http.StatusForbidden},
+		{"missing policy", func() *webapp.AccessController {
+			r := webapp.NewPolicyRegistry()
+			if err := services.RegisterAccessModels(r); err != nil {
+				t.Fatal(err)
+			}
+			return &webapp.AccessController{Registry: r, ResolvePrincipal: c.ResolvePrincipal}
+		}(), http.StatusInternalServerError},
+	} {
+		routes := []webapp.Route{}
+		g := webapp.NewGroup("", &routes)
+		registerGeneratedRoutes(&g)
+		h := webapp.MustBuildRouter(&webapp.AppContext{Access: tc.control}, routes)
+		response := request(h, http.MethodPost, "/transport-orders", `{"id":1,"name":"x"}`)
+		if response.Code != tc.want {
+			t.Fatalf("%s: %d %s", tc.name, response.Code, response.Body.String())
+		}
+	}
+	if len(conn.queries) != 0 {
+		t.Fatal("failed authorization reached SQL")
+	}
+}
+
+func TestGeneratedHiddenColumnsReachPolicyAwareCRUD(t *testing.T) {
+	conn := &captureConn{}
+	input, err := modelbind.DecodeJSONBodyInput[*models.HiddenOrder](strings.NewReader(`{"id":1,"name":"hidden"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := webapp.InsertModelInputWithConn(scopedContext(t), conn, input, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.queries) != 1 || !strings.Contains(conn.queries[0], "customer_id") {
+		t.Fatal(conn.queries)
+	}
+	found := false
+	for _, value := range conn.params[0] {
+		if value == int64(42) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("hidden write value missing", conn.params)
+	}
+	model := &models.OrderOverview{}
+	resolved, err := webapp.ResolveModelAccess(scopedContext(t), model, access.Read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectBuilder := pg.NewPgSelect(model, nil, nil, nil)
+	selectBuilder.AddField("name", &model.Name)
+	if err := resolved.ApplyTo(selectBuilder); err != nil {
+		t.Fatal(err)
+	}
+	args := []any{}
+	sql, err := selectBuilder.BuildSQL(&args)
+	if err != nil || !strings.Contains(sql, "o.customer_id") {
+		t.Fatal(sql, err)
+	}
+}
+
+func TestGeneratedNotificationsDoNotRestoreUnrestrictedBroadcasts(t *testing.T) {
+	_, c, _ := setup(t)
+	ordinary := &publisher{}
+	if _, err := webapp.CallServiceJSON(context.Background(), "TransportOrder", "Create", json.RawMessage(`{"id":1,"name":"x"}`), webapp.ServiceContext{Access: c, EventPublisher: ordinary}); err != nil {
+		t.Fatal(err)
+	}
+	if ordinary.ordinary != 0 {
+		t.Fatal("protected notification broadcast without access-aware publisher")
+	}
+	scoped := &scopedPublisher{}
+	if _, err := webapp.CallServiceJSON(context.Background(), "TransportOrder", "Create", json.RawMessage(`{"id":1,"name":"x"}`), webapp.ServiceContext{Access: c, EventPublisher: scoped}); err != nil {
+		t.Fatal(err)
+	}
+	if scoped.ordinary != 0 || scoped.scoped != 1 {
+		t.Fatal("access-aware publisher was not used", scoped)
+	}
+}

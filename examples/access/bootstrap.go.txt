@@ -1,0 +1,101 @@
+// Application-owned example. Copy into internal/accesssetup/bootstrap.go and
+// change example.com/project to your application's module path. Codegen never
+// writes this file. IdentityStore is an APPLICATION interface, not a library API.
+package accesssetup
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/dronm/modelbind/access"
+	"github.com/dronm/session"
+	"github.com/dronm/webapp"
+
+	"example.com/project/internal/services"
+)
+
+type Identity struct {
+	UserID     string
+	Roles      []string
+	CustomerID int64
+	Active     bool
+}
+
+// Resolve must revalidate the session/token and load current roles and customer
+// assignment from trusted application storage. Never use a request's owner ID.
+// Anonymous/expired sessions return an inactive identity (or an error).
+type IdentityStore interface {
+	Resolve(context.Context, session.Session) (Identity, error)
+}
+
+// ConfigureAccess publishes the controller only after every registration succeeds.
+// Call once at startup before HTTP/WS/event dispatch; do not modify it at runtime.
+func ConfigureAccess(app *webapp.AppContext, identities IdentityStore) error {
+	if app == nil || identities == nil {
+		return fmt.Errorf("configure access: %w: app and identity store are required", webapp.ErrAccessConfiguration)
+	}
+	registry := webapp.NewPolicyRegistry()
+	if err := services.RegisterAccessModels(registry); err != nil {
+		return err
+	}
+
+	customerScope := func(_ context.Context, p webapp.Principal) (access.Policy, error) {
+		id, ok := p.Claims["customer_id"].(int64)
+		if !ok || id <= 0 {
+			return access.DenyAll(), nil
+		}
+		return access.Scope(access.Eq("owner", id)), nil
+	}
+	for _, operation := range []access.Operation{access.Read, access.Delete} {
+		if err := registry.RegisterRole("customer", "Order", operation, customerScope); err != nil {
+			return fmt.Errorf("register Order %s policy: %w", operation, err)
+		}
+	}
+	if err := registry.RegisterRole("customer", "Order", access.Insert,
+		func(_ context.Context, p webapp.Principal) (access.Policy, error) {
+			id, ok := p.Claims["customer_id"].(int64)
+			if !ok || id <= 0 {
+				return access.DenyAll(), nil
+			}
+			return access.ForInsert(access.WriteRules{"owner": access.Enforce(id)}), nil
+		},
+	); err != nil {
+		return fmt.Errorf("register Order insert policy: %w", err)
+	}
+	if err := registry.RegisterRole("customer", "Order", access.Update,
+		func(ctx context.Context, p webapp.Principal) (access.Policy, error) {
+			policy, err := customerScope(ctx, p)
+			if err != nil {
+				return policy, err
+			}
+			id, ok := p.Claims["customer_id"].(int64)
+			if !ok || id <= 0 {
+				return access.DenyAll(), nil
+			}
+			policy.Writes = access.WriteRules{"owner": access.Enforce(id)}
+			return policy, nil
+		},
+	); err != nil {
+		return fmt.Errorf("register Order update policy: %w", err)
+	}
+
+	app.Access = &webapp.AccessController{
+		Registry: registry,
+		ResolvePrincipal: func(ctx context.Context, sess session.Session) (webapp.Principal, error) {
+			identity, err := identities.Resolve(ctx, sess)
+			if err != nil {
+				return webapp.Principal{}, fmt.Errorf("resolve current identity: %w", err)
+			}
+			if !identity.Active || strings.TrimSpace(identity.UserID) == "" {
+				return webapp.Principal{}, nil
+			}
+			return webapp.Principal{
+				UserID: identity.UserID,
+				Roles:  append([]string(nil), identity.Roles...),
+				Claims: map[string]any{"customer_id": identity.CustomerID},
+			}, nil
+		},
+	}
+	return nil
+}

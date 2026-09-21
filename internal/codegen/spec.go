@@ -9,6 +9,10 @@ import (
 )
 
 type ObjectSpec struct {
+	Access       *AccessSpec `yaml:"access"`
+	Enums        []EnumSpec  `yaml:"enums"`
+	enumRegistry map[string]EnumSpec
+
 	SourceFile        string               `yaml:"-"`
 	Name              string               `yaml:"name"`
 	Comment           string               `yaml:"comment"`
@@ -36,6 +40,7 @@ type ObjectSpec struct {
 }
 
 type TableSpec struct {
+	Alias   string   `yaml:"alias"`
 	Schema  string   `yaml:"schema"`
 	Name    string   `yaml:"name"`
 	Checks  []string `yaml:"checks"`
@@ -57,6 +62,9 @@ type KeySpec struct {
 }
 
 type FieldSpec struct {
+	FrontendDefault *string `yaml:"frontendDefault"`
+	enumDefinition  *EnumSpec
+
 	Name            string         `yaml:"name"`
 	Type            string         `yaml:"type"`
 	SQLType         string         `yaml:"sqlType"`
@@ -146,6 +154,13 @@ type FrontendListSpec struct {
 }
 
 type FrontendListColumnSpec struct {
+	Format           string         `yaml:"format"`
+	Searchable       *bool          `yaml:"searchable"`
+	SearchField      string         `yaml:"searchField"`
+	SearchDataType   string         `yaml:"searchDataType"`
+	SearchOperations []string       `yaml:"searchOperations"`
+	EditorProps      map[string]any `yaml:"editorProps"`
+
 	Field     string                     `yaml:"field"`
 	Label     string                     `yaml:"label"`
 	Width     string                     `yaml:"width"`
@@ -287,6 +302,12 @@ type TestSpec struct {
 }
 
 func (s ObjectSpec) Validate() error {
+	normalized, err := resolveObjectEnums(s, s.enumRegistry)
+	if err != nil {
+		return err
+	}
+	s = normalized
+
 	if strings.TrimSpace(s.Name) == "" {
 		return fmt.Errorf("name is required")
 	}
@@ -295,6 +316,9 @@ func (s ObjectSpec) Validate() error {
 	}
 	if strings.TrimSpace(s.Table.Name) == "" {
 		return fmt.Errorf("table.name is required")
+	}
+	if strings.TrimSpace(s.Table.Alias) != "" {
+		return fmt.Errorf("table.alias is only supported on list/detail projections, not a writable table")
 	}
 	if err := validateRelation(s.Table, "table"); err != nil {
 		return err
@@ -765,9 +789,12 @@ func validateFrontendSpec(spec ObjectSpec, fields map[string]FieldSpec) error {
 		seenColumns[name] = struct{}{}
 		dataType := strings.TrimSpace(item.DataType)
 		switch dataType {
-		case "", "string", "number", "boolean", "date", "datetime", "reference":
+		case "", "string", "number", "boolean", "date", "datetime", "reference", "enum":
 		default:
 			return fmt.Errorf("frontend list column %s has unsupported dataType %q", name, item.DataType)
+		}
+		if err := validateEnumColumnSpec(item, listFields); err != nil {
+			return err
 		}
 		if item.Reference != nil {
 			referenceName := strings.TrimSpace(item.Reference.Name)
@@ -901,6 +928,9 @@ func validateField(field FieldSpec) error {
 }
 
 func validateRelation(table TableSpec, label string) error {
+	if table.Alias != "" && !isSQLIdentifier(table.Alias) {
+		return fmt.Errorf("%s.alias %q must be a simple SQL identifier", label, table.Alias)
+	}
 	if schema := strings.TrimSpace(table.Schema); schema != "" && !isSQLIdentifier(schema) {
 		return fmt.Errorf("%s.schema %q is not a safe SQL identifier", label, schema)
 	}
