@@ -191,5 +191,15 @@ export const {{ .Camel }}Collection = defineCollection<
 {{- end }}
 	stateKey: "{{ .Camel }}-grid",
 	pageSize: {{ .Frontend.List.PageSize }},
+{{- with .Frontend.List.InfiniteScroll }}
+	infiniteScroll: {
+		keyFields: [{{ range $index, $field := .KeyFields }}{{ if $index }}, {{ end }}{{ printf "%q" $field }}{{ end }}],
+		chunkSize: {{ .ChunkSize }},
+		prefetchRows: {{ .PrefetchRows }},
+		maxCachedChunks: {{ .MaxCachedChunks }},
+		scrollHeight: {{ printf "%q" .ScrollHeight }},
+		itemSize: {{ .ItemSize }},
+	},
+{{- end }}
 	showCommandShortcuts: false,
 });

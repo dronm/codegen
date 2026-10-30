@@ -1,0 +1,52 @@
+# Existing pagination remains the default; no new options are needed.
+name: CatalogueEntry
+humanName: catalogue entry
+humanNamePlural: catalogue entries
+table:
+  schema: public
+  name: catalogue_entries
+route: /catalogue-entries
+
+keys:
+  - name: entry_id
+    type: int
+
+fields:
+  - name: entry_id
+    type: int
+    primaryKey: true
+    autoIncrement: true
+    serverGenerated: true
+  - name: name
+    type: string
+    required: true
+
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+applicationRoute:
+  enabled: true
+  name: catalogueEntries
+  path: /catalogue-entries
+  description: Catalogue entries
+  section: References
+
+frontend:
+  scaffold: true
+  title: Catalogue entries
+  list:
+    pageSize: 50
+    columns:
+      - field: entry_id
+        label: Entry
+      - field: name
+        label: Name
+
+migration:
+  enabled: true
+test:
+  enabled: false

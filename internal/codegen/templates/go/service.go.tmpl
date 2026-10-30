@@ -291,7 +291,7 @@ func (s *{{ .Name }}Service) Detail(
 
 func (s *{{ .Name }}Service) List(
 	ctx context.Context,
-	params modelbind.CollectionParams,
+	params modelbind.CollectionParams{{ if .GroupedFilters }}WithWhere{{ end }},
 ) (wmodels.CollectionResponse[*models.{{ .ListModelName }}], error) {
 {{- if .SessionRequired }}
 	if err := s.requireSession(); err != nil {
@@ -302,7 +302,7 @@ func (s *{{ .Name }}Service) List(
 		return wmodels.CollectionResponse[*models.{{ .ListModelName }}]{}, err
 	}
 
-	rows, total, err := webapp.FetchCollectionModel(ctx, s.DB, &models.{{ .ListModelName }}{}, params)
+	rows, total, err := webapp.FetchCollectionModel{{ if .GroupedFilters }}Where{{ end }}(ctx, s.DB, &models.{{ .ListModelName }}{}, params)
 	if err != nil {
 		return wmodels.CollectionResponse[*models.{{ .ListModelName }}]{}, fmt.Errorf(
 			{{ goQuote (printf "fetch %s collection: %%w" .Human) }},

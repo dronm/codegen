@@ -49,7 +49,7 @@ func {{ .Camel }}Routes(api *webapp.Group) {
 		webapp.WithPermission({{ goQuote (printf "%s.list" .PermissionPrefix) }}),
 {{- end }}
 		webapp.WithService({{ goQuote .ServiceName }}, "List"),
-		webapp.WithBinder(webapp.CollectionParamsBinder()),
+		webapp.WithBinder(webapp.CollectionParams{{ if .GroupedFilters }}WithWhere{{ end }}Binder()),
 	)
 {{- end }}
 {{- if .GeneratedHTTPCRUD.Detail }}

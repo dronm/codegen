@@ -421,6 +421,7 @@ crud:
 | `humanNamePlural` | Plural wording used for collection errors and permissions. |
 | `table` | Base PostgreSQL relation, SQL table comment, and table-level checks. |
 | `list` | Optional separate collection model/relation. |
+| `collection.groupedFilters` | Optional grouped backend collection contract. Defaults to false; enabled automatically by infinite scrolling on generator-owned list routes. Explicit false conflicts with enabled scrolling. Requires `crud.list`. |
 | `route` | API collection route. |
 | `permissionPrefix` | Permission and route-name prefix; defaults to lower camel model name. |
 | `serviceName` | Registered webapp service name; defaults to model name. |
@@ -860,6 +861,53 @@ frontend:
 ```
 
 Custom components must be imported explicitly and must support the same `modelValue` contract as the built-in reference inputs. JSON fields require an explicit JSON editor. Writable date fields require an explicit date component. The generator refuses to emit a misleading plain text control for either case.
+
+### Infinite scrolling and grouped filters
+
+Existing schemas retain pagination. Add the following to an object schema to
+use the collection library's existing scrolling mode:
+
+```yaml
+collection:
+  groupedFilters: true
+frontend:
+  scaffold: true
+  list:
+    infiniteScroll:
+      enabled: true
+      chunkSize: 100
+      prefetchRows: 30
+      maxCachedChunks: 5
+      scrollHeight: 32rem
+      itemSize: 40
+```
+
+Enabled scrolling requires `crud.list: true`, `frontend.scaffold: true`, and
+`frontend.list.enabled` not false. Omitting or disabling `infiniteScroll` emits
+no collection `infiniteScroll` option and preserves `pageSize`. Omitted numeric
+settings use the values shown above; `chunkSize` must be a positive integer,
+`prefetchRows` and `maxCachedChunks` must be nonnegative integers, and `itemSize`
+must be positive and finite. Explicit `prefetchRows: 0` disables lookahead, and
+`maxCachedChunks: 0` retains unlimited chunks. Validation also checks supplied
+settings when scrolling is disabled.
+
+The generated `keyFields` uses the schema keys' JSON/filter names. List
+projections must retain required cursor keys through DTO validation and model
+conversion. Generated composite-key list pages remain unsupported. Existing
+`sortField` mappings are preserved; sortable values must match backend ordering,
+including derived/reference expressions and timestamp precision.
+
+Backend-only grouped filtering can use `collection.groupedFilters: true` with
+no frontend configuration. Scrolling enables grouping automatically for
+generator-owned list routes; manual list routes require an explicit true
+declaration and application migration. Matching route binders, service
+parameters, and fetch helpers are required together. The application-owned
+`@/api/createCrudApi` must forward complete `CollectionParams`, including
+`where`. Affected frontend output requires vue-collection-lib 0.1.15 or newer.
+
+See [Grouped filters and infinite scrolling](collection-scrolling.md) for the
+full option table, dependencies, manual ownership rules, transport requirements,
+custom template updates, and existing-project migration.
 
 ### 8.5 Inline collection editing
 

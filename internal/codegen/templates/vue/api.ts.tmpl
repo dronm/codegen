@@ -47,7 +47,9 @@ const detailPath = (key: {{ .Name }}Key): string => {
 };
 {{- end }}
 
-const {{ .Camel }}CrudApi = createCrudApi<
+{{ if .Frontend.List.InfiniteScroll }}// The application-owned createCrudApi must forward complete CollectionParams,
+// including where, to the collection query serializer.
+{{ end }}const {{ .Camel }}CrudApi = createCrudApi<
 	{{ if .HasCustomList }}{{ .ListModelName }}{{ else }}{{ .Name }}{{ end }},
 	{{ if .HasCustomList }}{{ .ListModelName }}DTO{{ else }}{{ .Name }}DTO{{ end }},
 	{{ .DetailModelName }},

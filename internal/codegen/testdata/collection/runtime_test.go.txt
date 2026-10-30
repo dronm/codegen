@@ -1,0 +1,150 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/dronm/ds/v4"
+	"github.com/dronm/webapp"
+
+	"example.com/project/internal/services"
+)
+
+type collectionRows struct {
+	ds.Rows
+	values [][]any
+	index  int
+}
+
+func (r *collectionRows) Next() bool { r.index++; return r.index <= len(r.values) }
+func (r *collectionRows) Scan(destinations ...any) error {
+	for index, value := range r.values[r.index-1] {
+		reflect.ValueOf(destinations[index]).Elem().Set(reflect.ValueOf(value))
+	}
+	return nil
+}
+func (*collectionRows) Err() error   { return nil }
+func (*collectionRows) Close() error { return nil }
+
+type collectionConn struct {
+	ds.Conn
+	t            *testing.T
+	continuation bool
+	offset       bool
+	queries      int
+}
+
+// Validate the SQL and bound values emitted by the real helper before
+// returning database rows. A dropped where, flattened OR, wrong binder or
+// mismatched method type fails this test before any second chunk can succeed.
+func (c *collectionConn) Query(_ context.Context, sql string, args ...any) (ds.Rows, error) {
+	c.queries++
+	if c.continuation {
+		for _, fragment := range []string{"priority < $1", "priority = $2", "item_code < $3", " OR ", " AND "} {
+			if !strings.Contains(sql, fragment) {
+				c.t.Fatalf("continuation boundary missing %q: %s", fragment, sql)
+			}
+		}
+		if fmt.Sprintf("%v", args) != "[20 20 4]" {
+			c.t.Fatalf("continuation arguments: %#v", args)
+		}
+	} else if strings.Contains(sql, " WHERE ") || len(args) != 0 {
+		c.t.Fatalf("unexpected boundary in ordinary paginated request: %s %#v", sql, args)
+	}
+	if strings.Contains(sql, "count(*)") {
+		count := 5
+		if c.continuation {
+			count = 3
+		}
+		return &collectionRows{values: [][]any{{count}}}, nil
+	}
+	if !strings.Contains(sql, "ORDER BY priority DESC, item_code DESC") || !strings.HasSuffix(sql, " LIMIT 2") {
+		c.t.Fatal("sort/count contract changed:", sql)
+	}
+	if strings.Contains(sql, " OFFSET 1") != c.offset {
+		c.t.Fatal("from contract changed:", sql)
+	}
+	values := [][]any{{5, 20}, {4, 20}}
+	if c.continuation {
+		values = [][]any{{3, 20}, {2, 10}}
+	}
+	if c.offset {
+		values = [][]any{{4, 20}, {3, 20}}
+	}
+	return &collectionRows{values: values}, nil
+}
+
+type collectionPool struct{ connection *collectionConn }
+
+func (p collectionPool) Conn() ds.Conn { return p.connection }
+func (collectionPool) Release()        {}
+
+type collectionProvider struct {
+	ds.Provider
+	connection *collectionConn
+}
+
+func (p collectionProvider) GetSecondary(context.Context, string) (ds.PoolConn, ds.ServerID, error) {
+	return collectionPool{connection: p.connection}, "test", nil
+}
+func (collectionProvider) Release(ds.PoolConn, ds.ServerID) {}
+
+func TestGeneratedGroupedEndpointContinuation(t *testing.T) {
+	services.RegisterGeneratedServices()
+	connection := &collectionConn{t: t}
+	routes := []webapp.Route{}
+	group := webapp.NewGroup("", &routes)
+	registerGeneratedRoutes(&group)
+	handler := webapp.MustBuildRouter(&webapp.AppContext{DB: collectionProvider{connection: connection}}, routes)
+	request := func(params string) []int {
+		t.Helper()
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/cursor-items?params="+url.QueryEscape(params), nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%d: %s", response.Code, response.Body.String())
+		}
+		var body struct {
+			Rows []struct {
+				Code int `json:"item_code"`
+			} `json:"rows"`
+			Agg struct {
+				Total int `json:"tot_count"`
+			} `json:"agg"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Rows) != 2 || body.Agg.Total == 0 {
+			t.Fatal(response.Body.String())
+		}
+		return []int{body.Rows[0].Code, body.Rows[1].Code}
+	}
+	first := request(`{"count":2,"sorter":[{"f":"priority","d":"d"},{"f":"item_code","d":"d"}]}`)
+	if !reflect.DeepEqual(first, []int{5, 4}) {
+		t.Fatal(first)
+	}
+	connection.continuation = true
+	next := request(`{"count":2,"sorter":[{"f":"priority","d":"d"},{"f":"item_code","d":"d"}],"where":{"or":[{"f":"priority","o":"l","v":20},{"and":[{"f":"priority","o":"e","v":20},{"f":"item_code","o":"l","v":4}]}]}}`)
+	if !reflect.DeepEqual(next, []int{3, 2}) || reflect.DeepEqual(first, next) {
+		t.Fatal(first, next)
+	}
+	connection.continuation, connection.offset = false, true
+	if page := request(`{"from":1,"count":2,"sorter":[{"f":"priority","d":"d"},{"f":"item_code","d":"d"}]}`); !reflect.DeepEqual(page, []int{4, 3}) {
+		t.Fatal(page)
+	}
+	if connection.queries != 6 {
+		t.Fatal("data and aggregate query count:", connection.queries)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/cursor-items?where="+url.QueryEscape(`{"and":[]}`), nil))
+	if response.Code != http.StatusBadRequest || connection.queries != 6 {
+		t.Fatal(response.Code, connection.queries)
+	}
+}

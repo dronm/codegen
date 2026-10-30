@@ -23,6 +23,20 @@
 
 ## Unreleased
 
+- Add optional `collection.groupedFilters` and
+  `frontend.list.infiniteScroll` integration with vue-collection-lib 0.1.15+.
+- Generate matching grouped binders, service parameters, and fetch helpers;
+  enable grouping automatically for generated infinite-scrolling endpoints.
+- Preserve paginated output when disabled, explicit zero prefetch/cache
+  settings, custom list projections and JSON key names, and independent manual
+  service/route ownership.
+- Validate cursor fields, dependency compatibility, conflicting configuration,
+  and detectable handwritten service signature mismatches without rewriting
+  application dependencies or developer-owned Vue scaffolds.
+- Document complete `where` forwarding in application-owned CRUD helpers,
+  ordering precision, manual endpoint/custom template migration, and paginated
+  and scrolling examples.
+
 - Fix access write-target validation to accept unquoted case variants, detect
   case-folded duplicate targets, and normalize columns before modelbind metadata
   checks and registration without weakening non-writable-field protection.

@@ -64,6 +64,7 @@ type ObjectView struct {
 	DetailCommonSchemas    []string
 	ListCommonSchemas      []string
 	CRUD                   CRUDSpec
+	GroupedFilters         bool
 	GeneratedServiceCRUD   CRUDSpec
 	ManualServiceCRUD      CRUDSpec
 	HTTPRoutesEnabled      bool
@@ -205,7 +206,8 @@ type FrontendComponentImportView struct {
 }
 
 type FrontendListView struct {
-	Enums []FrontendEnumView
+	Enums          []FrontendEnumView
+	InfiniteScroll *FrontendInfiniteScrollView
 
 	Enabled             bool
 	PageSize            int
@@ -218,6 +220,15 @@ type FrontendListView struct {
 	Columns             []FrontendListColumnView
 	CreateRowFields     []FrontendInlineCreateFieldView
 	CreateModelFields   []FrontendInlineCreateModelFieldView
+}
+
+type FrontendInfiniteScrollView struct {
+	KeyFields       []string
+	ChunkSize       int
+	PrefetchRows    int
+	MaxCachedChunks int
+	ScrollHeight    string
+	ItemSize        float64
 }
 
 type FrontendListReferenceImportView struct {
@@ -412,6 +423,7 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 		CRUDNotifications:  boolOrDefault(spec.CRUDNotifications, true),
 		PermissionsEnabled: boolOrDefault(spec.Permissions.Enabled, true),
 		CRUD:               spec.CRUD,
+		GroupedFilters:     spec.groupedCollectionFilters(),
 		ManualServiceCRUD:  manualServiceCRUD(spec.Service.ManualMethods),
 		HTTPRoutesEnabled:  boolOrDefault(spec.HTTPRoutes.Enabled, true),
 		ManualHTTPCRUD:     manualHTTPCRUD(spec.HTTPRoutes.ManualMethods),
@@ -585,6 +597,9 @@ func BuildObjectView(cfg Config, spec ObjectSpec) (ObjectView, error) {
 	view.ServiceImports = buildServiceImports(view)
 	view.HTTPImports = buildHTTPImports(view)
 	view.Frontend = buildFrontendView(spec, view)
+	if err := validateInfiniteScrollCursor(view); err != nil {
+		return ObjectView{}, err
+	}
 	view.CommonSchemas = commonSchemasForFields(view.FrontendFields)
 	view.DetailCommonSchemas = commonSchemasForFields(view.FrontendDetailFields)
 	view.ListCommonSchemas = commonSchemasForFields(view.FrontendListFields)

@@ -130,6 +130,9 @@ func prepareObjects(cfg Config) ([]ObjectView, error) {
 	if err := validateAccessObjects(cfg, objects); err != nil {
 		return nil, err
 	}
+	if err := validateGroupedCollectionServices(cfg, objects); err != nil {
+		return nil, err
+	}
 	if err := validateBackendEnumObjects(cfg, objects); err != nil {
 		return nil, err
 	}
@@ -320,6 +323,9 @@ type Renderer struct {
 }
 
 func (r Renderer) RenderObject(model ObjectView) error {
+	if err := validateGroupedCollectionServices(r.Config, []ObjectView{model}); err != nil {
+		return err
+	}
 	if err := validateAccessObjects(r.Config, []ObjectView{model}); err != nil {
 		return err
 	}

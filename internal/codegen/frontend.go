@@ -284,6 +284,34 @@ func buildFrontendList(spec ObjectSpec, object ObjectView) FrontendListView {
 		Inline:          editMode == "inline",
 		CanInlineCreate: editMode == "inline" && object.CRUD.Create,
 	}
+	if options := spec.Frontend.List.InfiniteScroll; options != nil && options.Enabled {
+		infinite := &FrontendInfiniteScrollView{
+			ChunkSize:       100,
+			PrefetchRows:    30,
+			MaxCachedChunks: 5,
+			ScrollHeight:    "32rem",
+			ItemSize:        40,
+		}
+		for _, key := range object.FrontendKeys {
+			infinite.KeyFields = append(infinite.KeyFields, key.JSONName)
+		}
+		if options.ChunkSize != nil {
+			infinite.ChunkSize = *options.ChunkSize
+		}
+		if options.PrefetchRows != nil {
+			infinite.PrefetchRows = *options.PrefetchRows
+		}
+		if options.MaxCachedChunks != nil {
+			infinite.MaxCachedChunks = *options.MaxCachedChunks
+		}
+		if options.ScrollHeight != "" {
+			infinite.ScrollHeight = strings.TrimSpace(options.ScrollHeight)
+		}
+		if options.ItemSize != nil {
+			infinite.ItemSize = *options.ItemSize
+		}
+		view.InfiniteScroll = infinite
+	}
 	fieldByName := frontendFieldMap(object.FrontendListFields)
 	updateFields := make(map[string]struct{}, len(object.FrontendUpdateFields))
 	for _, field := range object.FrontendUpdateFields {

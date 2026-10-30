@@ -114,6 +114,16 @@ goFilterTagName: f
 
 Unknown YAML properties are rejected.
 
+Grouped collection filters and infinite scrolling are per-object schema options,
+not global `codegen.yaml` settings. Configure `collection.groupedFilters` and
+`frontend.list.infiniteScroll` in the object's YAML; see
+[Grouped filters and infinite scrolling](collection-scrolling.md). Existing
+configuration precedence and the global backend/frontend generation switches
+remain unchanged. When frontend output contains an enabled scrolling collection,
+Codegen checks for `@katren/vue-collection-lib` 0.1.15 or newer using the existing
+package/local-workspace dependency conventions. Application dependency files
+remain application-owned.
+
 ### Top-level properties
 
 | Property | Default | Meaning |

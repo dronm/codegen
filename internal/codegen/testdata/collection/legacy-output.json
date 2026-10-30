@@ -1,0 +1,18 @@
+{
+	"front/src/api/vehicleBrand.gen.ts": "2ff1d56f746e2e90cb19c60d8d2a991e3a55d7daae5009e926eef258e19c43db",
+	"front/src/collections/vehicleBrand.gen.ts": "9eb48c4005f4dab3585280c6daa7facff0adc1e3a0ae23c4533bb5326ba216ef",
+	"front/src/components/vehicleBrand/VehicleBrandForm.vue": "defb35882713d61332a7b8563bb5410a724cdb6eb20e04c9d55ffa7fb83a8357",
+	"front/src/composables/schemas/useVehicleBrandSchemas.gen.ts": "a0f16c9e39189c3052c9bd9369782b4bb9842605f0fdd405b49f7f3b58760ecd",
+	"front/src/forms/vehicleBrand.gen.ts": "d08606fdbb4c1cbf951546b118c2290c2c829f48c946832b462743b46373350d",
+	"front/src/locales/ru.gen.json": "22075bec2d12b77f36dd1a42e5f1cdd3494a7f61caf3dbdd95b081e170b95e46",
+	"front/src/router/routeManifest.gen.ts": "4aab3ac5241de850b3afe113ce82558a513c1c3bf4ce2db0a32470d8e24d2fc4",
+	"front/src/schemas/vehicleBrand.gen.ts": "e304016775345cb48dc4a6c7e73050b0ea955d574e1299944452fc4617d85022",
+	"front/src/types/vehicleBrand.gen.ts": "a2b9f1597575e754d58d7eeba87359929d17a6e167ebe994301963f75c401697",
+	"front/src/views/vehicleBrand/VehicleBrandEditPage.vue": "9b8594547de6d810e96273632328df61de60a73d1ed9695334076aceffc84003",
+	"front/src/views/vehicleBrand/VehicleBrandList.vue": "868d91982756205f6c51ec7809443312ce8b546e7d7ef4252331769ab2a717f5",
+	"server/internal/httpapi/routes_gen.go": "97f9b16bd05ba5f27f06c39b6b6c69ee29168a3c068460b0ad6ad2d98cb77b3d",
+	"server/internal/httpapi/vehicleBrand.gen.go": "8691c8b1b56bdb87b8c46e8a5523b3698a42b7f7ef89769999ffc1fe50f1a966",
+	"server/internal/models/vehicleBrand.gen.go": "04358c6c74203cc5b6849b292906e3c8831b933471ee170c146af7f2ca4db414",
+	"server/internal/services/services_gen.go": "811489340711f1219956511d5b9f64e0579286c56d752ab2a4041255eaa0f10b",
+	"server/internal/services/vehicleBrand.gen.go": "f21f64406e2e1ac0dce6438edac81a22316c3ee033870b21686f1728320fea7d"
+}

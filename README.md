@@ -24,6 +24,13 @@ optional Vue 3 / TypeScript / Valibot / PrimeVue scaffold
 
 Generated Vue collection pages support both page-based editing and native inline row editing through `@katren/vue-collection-lib`. Inline mode includes generated editable-column metadata, inline create drafts, typed create payload mapping, reference-backed editors, custom server-side `sortField` expressions, date-only editing, and date+time editing for datetime/timestamptz fields. Inline mode disables the separate page form by default unless `frontend.form.enabled: true` is explicitly set, and explicit list-column labels remain authoritative for generated collection headers.
 
+Collections can opt into grouped backend filters and the library's infinite
+scrolling mode. Existing schemas retain paginated output. See
+[Grouped filters and infinite scrolling](docs/collection-scrolling.md),
+[the paginated example](examples/collection_paginated.yaml), and
+[the scrolling example](examples/collection_infinite.yaml) for configuration,
+dependency requirements, and migration of manual endpoints and custom templates.
+
 Accumulation-register schemas generate a versioned common PostgreSQL runtime, immutable `ra_*` action ledgers, monthly/current `rg_*` aggregates, typed balance/summary functions, and Go repositories. Recorder-specific document posting remains hand-written and transactional.
 
 The generator is meant for ordinary database-backed CRUD and administrative entities. Domain workflows, transactions spanning several aggregates, parser logic, imports, image processing, and other application-specific behavior remain hand-written.
@@ -296,5 +303,6 @@ A template override is project-specific technical debt. Prefer evolving the shar
 - [Configuration and CLI](docs/configuration.md)
 - [Consumer integration](docs/integration.md)
 - [Object schema reference](docs/schema-reference.md)
+- [Grouped filters and infinite scrolling](docs/collection-scrolling.md)
 - [Accumulation registers](docs/registers.md)
 - [Extraction/migration guide](docs/migration-from-embedded.md)

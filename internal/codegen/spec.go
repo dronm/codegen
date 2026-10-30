@@ -31,6 +31,7 @@ type ObjectSpec struct {
 	Keys              []KeySpec            `yaml:"keys"`
 	Fields            []FieldSpec          `yaml:"fields"`
 	CRUD              CRUDSpec             `yaml:"crud"`
+	Collection        CollectionSpec       `yaml:"collection"`
 	Permissions       PermissionSpec       `yaml:"permissions"`
 	ApplicationRoute  ApplicationRouteSpec `yaml:"applicationRoute"`
 	Menu              MenuSpec             `yaml:"menu"`
@@ -147,10 +148,26 @@ type FrontendFormFieldSpec struct {
 }
 
 type FrontendListSpec struct {
-	Enabled  *bool                    `yaml:"enabled"`
-	PageSize int                      `yaml:"pageSize"`
-	EditMode string                   `yaml:"editMode"`
-	Columns  []FrontendListColumnSpec `yaml:"columns"`
+	InfiniteScroll *FrontendInfiniteScrollSpec `yaml:"infiniteScroll"`
+	Enabled        *bool                       `yaml:"enabled"`
+	PageSize       int                         `yaml:"pageSize"`
+	EditMode       string                      `yaml:"editMode"`
+	Columns        []FrontendListColumnSpec    `yaml:"columns"`
+}
+
+type CollectionSpec struct {
+	GroupedFilters *bool `yaml:"groupedFilters"`
+}
+
+// Pointers distinguish omitted settings from explicit zero (no prefetch or
+// unlimited retention). Only enabled opts into frontend infinite scrolling.
+type FrontendInfiniteScrollSpec struct {
+	Enabled         bool     `yaml:"enabled"`
+	ChunkSize       *int     `yaml:"chunkSize"`
+	PrefetchRows    *int     `yaml:"prefetchRows"`
+	MaxCachedChunks *int     `yaml:"maxCachedChunks"`
+	ScrollHeight    string   `yaml:"scrollHeight"`
+	ItemSize        *float64 `yaml:"itemSize"`
 }
 
 type FrontendListColumnSpec struct {
@@ -351,6 +368,9 @@ func (s ObjectSpec) Validate() error {
 		return fmt.Errorf("httpRoutes.manualMethods cannot be set when httpRoutes.enabled is false")
 	}
 	if err := validateManualHTTPMethods(s.HTTPRoutes.ManualMethods, s.CRUD); err != nil {
+		return err
+	}
+	if err := validateCollectionSpec(s); err != nil {
 		return err
 	}
 

@@ -1,0 +1,80 @@
+# Requires grouped-capable webapp/modelbind and vue-collection-lib >=0.1.15.
+name: CatalogueStreamEntry
+humanName: catalogue stream entry
+humanNamePlural: catalogue stream entries
+table:
+  schema: public
+  name: catalogue_stream_entries
+route: /catalogue-stream-entries
+
+# Explicit opt-in also permits this schema to be migrated to manual list routes.
+# With generator-owned routes this setting may be omitted: scrolling enables it.
+collection:
+  groupedFilters: true
+
+keys:
+  - name: code
+    pathName: code
+    type: string
+
+fields:
+  - name: code
+    jsonName: entry_code
+    type: string
+    primaryKey: true
+    required: true
+  - name: name
+    type: string
+    required: true
+
+# This relation must be created by application-owned SQL before using the API.
+# Preserve the key's JSON name and required value in the list representation.
+list:
+  model: CatalogueStreamEntryList
+  table:
+    schema: public
+    name: catalogue_stream_entries_list
+  fields:
+    - name: code
+      jsonName: entry_code
+      type: string
+      required: true
+    - name: name
+      type: string
+      required: true
+
+crud:
+  create: true
+  list: true
+  detail: true
+  update: true
+  delete: true
+
+applicationRoute:
+  enabled: true
+  name: catalogueStreamEntries
+  path: /catalogue-stream-entries
+  description: Catalogue stream entries
+  section: References
+
+frontend:
+  scaffold: true
+  title: Catalogue stream entries
+  list:
+    infiniteScroll:
+      enabled: true
+      chunkSize: 100
+      prefetchRows: 30
+      maxCachedChunks: 5
+      scrollHeight: 32rem
+      itemSize: 40
+    columns:
+      - field: entry_code
+        label: Code
+      - field: name
+        label: Name
+
+migration:
+  enabled: true
+test:
+  enabled: false
